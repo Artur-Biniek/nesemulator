@@ -10,10 +10,18 @@ pub const LDA_ABS_Y: u8 = 0xB9;
 pub const LDA_IND_X: u8 = 0xA1;
 pub const LDA_IND_Y: u8 = 0xB1;
 
+// LDX (LoaD X register)
+pub const LDX_IMM: u8 = 0xA2;
+pub const LDX_ZP: u8 = 0xA6;
+pub const LDX_ZP_Y: u8 = 0xB6;
+pub const LDX_ABS: u8 = 0xAE;
+pub const LDX_ABS_Y: u8 = 0xBE;
+
 pub enum AddressMode {
     Immediate,
     ZeroPage,
     ZeroPageX,
+    ZeroPageY,
     Absolute,
     AbsoluteX,
     AbsoluteY,
