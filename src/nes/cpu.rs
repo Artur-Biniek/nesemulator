@@ -44,7 +44,14 @@ impl Cpu {
             op::LDX_ZP_Y => self.ldx(AddressMode::ZeroPageY, bus),
             op::LDX_ABS => self.ldx(AddressMode::Absolute, bus),
             op::LDX_ABS_Y => self.ldx(AddressMode::AbsoluteY, bus),
-            o => panic!("unknown opcode: {}", o),
+            // LDY
+            op::LDY_IMM => self.ldy(AddressMode::Immediate, bus),
+            op::LDY_ZP => self.ldy(AddressMode::ZeroPage, bus),
+            op::LDY_ZP_X => self.ldy(AddressMode::ZeroPageX, bus),
+            op::LDY_ABS => self.ldy(AddressMode::Absolute, bus),
+            op::LDY_ABS_X => self.ldy(AddressMode::AbsoluteX, bus),
+            // Panic
+            o => panic!("unknown opcode: {:X}", o),
         }
     }
     fn get_address(&self, mode: &AddressMode, bus: &Bus) -> (u16, bool) {
@@ -151,6 +158,35 @@ impl Cpu {
                 self.pc += 2;
             }
             AddressMode::AbsoluteY => {
+                bus.tick(if page_crossed { 5 } else { 4 });
+                self.pc += 2;
+            }
+            _ => panic!("Unsupported address mode"),
+        }
+    }
+    fn ldy(&mut self, mode: AddressMode, bus: &mut Bus) {
+        let (addr, page_crossed) = self.get_address(&mode, bus);
+        self.y = bus.read8(addr);
+        self.set_zero_and_negative_flags(self.y);
+
+        match mode {
+            AddressMode::Immediate => {
+                bus.tick(2);
+                self.pc += 1;
+            }
+            AddressMode::ZeroPage => {
+                bus.tick(3);
+                self.pc += 1;
+            }
+            AddressMode::ZeroPageX => {
+                bus.tick(4);
+                self.pc += 1;
+            }
+            AddressMode::Absolute => {
+                bus.tick(4);
+                self.pc += 2;
+            }
+            AddressMode::AbsoluteX => {
                 bus.tick(if page_crossed { 5 } else { 4 });
                 self.pc += 2;
             }
@@ -453,6 +489,112 @@ mod tests {
             cpu.step(&mut bus);
 
             assert_eq!(cpu.x, val);
+            assert_eq!(cpu.pc, bus::PRG_ROM_START + 3);
+
+            let page_crossed = target & 0xFF00 != 0x0200;
+            if page_crossed {
+                assert_eq!(bus.get_cycles(), 5);
+            } else {
+                assert_eq!(bus.get_cycles(), 4);
+            }
+
+            assert_eq!(cpu.negative_flag, (val as i8) < 0);
+            assert_eq!(cpu.zero_flag, val == 0);
+        }
+    }
+
+    #[test]
+    fn test_ldy_immediate() {
+        for val in 0..=255 {
+            let mut bus = Bus::new(vec![op::LDY_IMM, val]);
+            let mut cpu = Cpu::new();
+
+            cpu.pc = bus::PRG_ROM_START;
+            cpu.step(&mut bus);
+
+            assert_eq!(cpu.y, val);
+            assert_eq!(cpu.pc, bus::PRG_ROM_START + 2);
+            assert_eq!(bus.get_cycles(), 2);
+
+            assert_eq!(cpu.negative_flag, (val as i8) < 0);
+            assert_eq!(cpu.zero_flag, val == 0);
+        }
+    }
+
+    #[test]
+    fn test_ldy_zero_page() {
+        for val in 0..=255 {
+            let mut bus = Bus::new(vec![op::LDY_ZP, 0x14]);
+            bus.write8(0x14, val);
+
+            let mut cpu = Cpu::new();
+            cpu.pc = bus::PRG_ROM_START;
+            cpu.step(&mut bus);
+
+            assert_eq!(cpu.y, val);
+            assert_eq!(cpu.pc, bus::PRG_ROM_START + 2);
+            assert_eq!(bus.get_cycles(), 3);
+
+            assert_eq!(cpu.negative_flag, (val as i8) < 0);
+            assert_eq!(cpu.zero_flag, val == 0);
+        }
+    }
+
+    #[test]
+    fn test_ldy_zero_page_x() {
+        for val in 0..=255 {
+            let mut bus = Bus::new(vec![op::LDY_ZP_X, 0x05]);
+            bus.write8(0x04, val);
+
+            let mut cpu = Cpu::new();
+            cpu.pc = bus::PRG_ROM_START;
+            cpu.x = 0xFF;
+            cpu.step(&mut bus);
+
+            assert_eq!(cpu.y, val);
+            assert_eq!(cpu.pc, bus::PRG_ROM_START + 2);
+            assert_eq!(bus.get_cycles(), 4);
+
+            assert_eq!(cpu.negative_flag, (val as i8) < 0);
+            assert_eq!(cpu.zero_flag, val == 0);
+        }
+    }
+
+    #[test]
+    fn test_ldy_absolute() {
+        for val in 0..=255 {
+            let mut bus = Bus::new(vec![op::LDY_ABS, 0x05, 0x02]);
+            bus.write8(0x0205, val);
+
+            let mut cpu = Cpu::new();
+            cpu.pc = bus::PRG_ROM_START;
+            cpu.step(&mut bus);
+
+            assert_eq!(cpu.y, val);
+            assert_eq!(cpu.pc, bus::PRG_ROM_START + 3);
+            assert_eq!(bus.get_cycles(), 4);
+
+            assert_eq!(cpu.negative_flag, (val as i8) < 0);
+            assert_eq!(cpu.zero_flag, val == 0);
+        }
+    }
+
+    #[test]
+    fn test_ldy_absolute_x() {
+        for val in 0..=255 {
+            let base_lo = 0xF0;
+            let base_hi = 0x02;
+            let base = (base_hi as u16) << 8 | (base_lo as u16);
+            let mut bus = Bus::new(vec![op::LDY_ABS_X, base_lo, base_hi]);
+            let target = base.wrapping_add(val as u16);
+            bus.write8(target, val);
+
+            let mut cpu = Cpu::new();
+            cpu.x = val;
+            cpu.pc = bus::PRG_ROM_START;
+            cpu.step(&mut bus);
+
+            assert_eq!(cpu.y, val);
             assert_eq!(cpu.pc, bus::PRG_ROM_START + 3);
 
             let page_crossed = target & 0xFF00 != 0x0200;
