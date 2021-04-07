@@ -50,6 +50,11 @@ impl Cpu {
             op::LDY_ZP_X => self.ldy(AddressMode::ZeroPageX, bus),
             op::LDY_ABS => self.ldy(AddressMode::Absolute, bus),
             op::LDY_ABS_X => self.ldy(AddressMode::AbsoluteX, bus),
+            //Register Instructinos
+            op::TAX => self.tax(bus),
+            op::TXA => self.txa(bus),
+            op::INX => self.inx(bus),
+            op::DEX => self.dex(bus),
             // Panic
             o => panic!("unknown opcode: {:X}", o),
         }
@@ -98,11 +103,7 @@ impl Cpu {
         self.negative_flag = (value as i8) < 0;
     }
 
-    fn lda(&mut self, mode: AddressMode, bus: &mut Bus) {
-        let (addr, page_crossed) = self.get_address(&mode, bus);
-        self.a = bus.read8(addr);
-        self.set_zero_and_negative_flags(self.a);
-
+    fn set_standard_cycles_and_pc(&mut self, mode: AddressMode, page_crossed: bool, bus: &mut Bus) {
         match mode {
             AddressMode::Immediate => {
                 bus.tick(2);
@@ -112,7 +113,7 @@ impl Cpu {
                 bus.tick(3);
                 self.pc += 1;
             }
-            AddressMode::ZeroPageX => {
+            AddressMode::ZeroPageX | AddressMode::ZeroPageY => {
                 bus.tick(4);
                 self.pc += 1;
             }
@@ -135,63 +136,48 @@ impl Cpu {
             _ => panic!("Unsupported addressing mode"),
         }
     }
+
+    fn set_register_instruction_cycles(&mut self, bus: &mut Bus) {
+        bus.tick(2);
+    }
+
+    fn lda(&mut self, mode: AddressMode, bus: &mut Bus) {
+        let (addr, page_crossed) = self.get_address(&mode, bus);
+        self.a = bus.read8(addr);
+        self.set_zero_and_negative_flags(self.a);
+        self.set_standard_cycles_and_pc(mode, page_crossed, bus);
+    }
     fn ldx(&mut self, mode: AddressMode, bus: &mut Bus) {
         let (addr, page_crossed) = self.get_address(&mode, bus);
         self.x = bus.read8(addr);
         self.set_zero_and_negative_flags(self.x);
-
-        match mode {
-            AddressMode::Immediate => {
-                bus.tick(2);
-                self.pc += 1;
-            }
-            AddressMode::ZeroPage => {
-                bus.tick(3);
-                self.pc += 1;
-            }
-            AddressMode::ZeroPageY => {
-                bus.tick(4);
-                self.pc += 1;
-            }
-            AddressMode::Absolute => {
-                bus.tick(4);
-                self.pc += 2;
-            }
-            AddressMode::AbsoluteY => {
-                bus.tick(if page_crossed { 5 } else { 4 });
-                self.pc += 2;
-            }
-            _ => panic!("Unsupported address mode"),
-        }
+        self.set_standard_cycles_and_pc(mode, page_crossed, bus);
     }
     fn ldy(&mut self, mode: AddressMode, bus: &mut Bus) {
         let (addr, page_crossed) = self.get_address(&mode, bus);
         self.y = bus.read8(addr);
         self.set_zero_and_negative_flags(self.y);
-
-        match mode {
-            AddressMode::Immediate => {
-                bus.tick(2);
-                self.pc += 1;
-            }
-            AddressMode::ZeroPage => {
-                bus.tick(3);
-                self.pc += 1;
-            }
-            AddressMode::ZeroPageX => {
-                bus.tick(4);
-                self.pc += 1;
-            }
-            AddressMode::Absolute => {
-                bus.tick(4);
-                self.pc += 2;
-            }
-            AddressMode::AbsoluteX => {
-                bus.tick(if page_crossed { 5 } else { 4 });
-                self.pc += 2;
-            }
-            _ => panic!("Unsupported address mode"),
-        }
+        self.set_standard_cycles_and_pc(mode, page_crossed, bus);
+    }
+    fn tax(&mut self, bus: &mut Bus) {
+        self.x = self.a;
+        self.set_zero_and_negative_flags(self.x);
+        self.set_register_instruction_cycles(bus);
+    }
+    fn txa(&mut self, bus: &mut Bus) {
+        self.a = self.x;
+        self.set_zero_and_negative_flags(self.a);
+        self.set_register_instruction_cycles(bus);
+    }
+    fn dex(&mut self, bus: &mut Bus) {
+        self.x = self.x.wrapping_sub(1);
+        self.set_zero_and_negative_flags(self.x);
+        self.set_register_instruction_cycles(bus);
+    }
+    fn inx(&mut self, bus: &mut Bus) {
+        self.x = self.x.wrapping_add(1);
+        self.set_zero_and_negative_flags(self.x);
+        self.set_register_instruction_cycles(bus);
     }
 }
 
@@ -606,6 +592,72 @@ mod tests {
 
             assert_eq!(cpu.negative_flag, (val as i8) < 0);
             assert_eq!(cpu.zero_flag, val == 0);
+        }
+    }
+
+    #[test]
+    fn test_tax() {
+        for val in 0..=255 {
+            let mut bus = Bus::new(vec![op::TAX]);
+            let mut cpu = Cpu::new();
+            cpu.pc = bus::PRG_ROM_START;
+            cpu.a = val;
+            cpu.step(&mut bus);
+
+            assert_eq!(cpu.a, cpu.x);
+            assert_eq!(cpu.negative_flag, (val as i8) < 0);
+            assert_eq!(cpu.zero_flag, val == 0);
+            assert_eq!(bus.get_cycles(), 2);
+            assert_eq!(cpu.pc, bus::PRG_ROM_START + 1);
+        }
+    }
+
+    #[test]
+    fn test_txa() {
+        for val in 0..=255 {
+            let mut bus = Bus::new(vec![op::TXA]);
+            let mut cpu = Cpu::new();
+            cpu.pc = bus::PRG_ROM_START;
+            cpu.x = val;
+            cpu.step(&mut bus);
+
+            assert_eq!(cpu.x, cpu.a);
+            assert_eq!(cpu.negative_flag, (val as i8) < 0);
+            assert_eq!(cpu.zero_flag, val == 0);
+            assert_eq!(bus.get_cycles(), 2);
+            assert_eq!(cpu.pc, bus::PRG_ROM_START + 1);
+        }
+    }
+    #[test]
+    fn test_dex() {
+        for val in 0..=255 {
+            let mut bus = Bus::new(vec![op::DEX]);
+            let mut cpu = Cpu::new();
+            cpu.pc = bus::PRG_ROM_START;
+            cpu.x = val;
+            cpu.step(&mut bus);
+
+            assert_eq!(cpu.x, val.wrapping_sub(1));
+            assert_eq!(cpu.negative_flag, (cpu.x as i8) < 0);
+            assert_eq!(cpu.zero_flag, cpu.x == 0);
+            assert_eq!(bus.get_cycles(), 2);
+            assert_eq!(cpu.pc, bus::PRG_ROM_START + 1);
+        }
+    }
+    #[test]
+    fn test_inx() {
+        for val in 0..=255 {
+            let mut bus = Bus::new(vec![op::INX]);
+            let mut cpu = Cpu::new();
+            cpu.pc = bus::PRG_ROM_START;
+            cpu.x = val;
+            cpu.step(&mut bus);
+
+            assert_eq!(cpu.x, val.wrapping_add(1));
+            assert_eq!(cpu.negative_flag, (cpu.x as i8) < 0);
+            assert_eq!(cpu.zero_flag, cpu.x == 0);
+            assert_eq!(bus.get_cycles(), 2);
+            assert_eq!(cpu.pc, bus::PRG_ROM_START + 1);
         }
     }
 }

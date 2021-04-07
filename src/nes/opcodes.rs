@@ -24,6 +24,12 @@ pub const LDY_ZP_X: u8 = 0xB4;
 pub const LDY_ABS: u8 = 0xAC;
 pub const LDY_ABS_X: u8 = 0xBC;
 
+// Register Instructions
+pub const TAX: u8 = 0xAA;
+pub const TXA: u8 = 0x8A;
+pub const DEX: u8 = 0xCA;
+pub const INX: u8 = 0xE8;
+
 pub enum AddressMode {
     Immediate,
     ZeroPage,
@@ -34,4 +40,14 @@ pub enum AddressMode {
     AbsoluteY,
     IndirectX,
     IndirectY,
+}
+
+pub struct Instruction<'a> {
+    pub mnemonic: &'a str,
+
+    pub opcode: u8,
+
+    pub addressing_mode: AddressMode,
+
+    pub cycle_cost: u8,
 }
