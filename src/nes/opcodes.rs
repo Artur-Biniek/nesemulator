@@ -198,6 +198,24 @@ lazy_static! {
             Instruction::new(0x7D, "ADC", AddressMode::AbsoluteX, 4),
             Instruction::new(0x7E, "ROR", AddressMode::AbsoluteX, 7),
             Instruction::ill(0x7F),
+
+            // 0x8_
+            Instruction::ill(0x80),
+            Instruction::new(0x81, "STA", AddressMode::IndirectZeroX, 6),
+            Instruction::ill(0x82),
+            Instruction::ill(0x83),
+            Instruction::new(0x84, "STY", AddressMode::ZeroPage, 3),
+            Instruction::new(0x85, "STA", AddressMode::ZeroPage, 3),
+            Instruction::new(0x86, "STX", AddressMode::ZeroPage, 3),
+            Instruction::ill(0x87),
+            Instruction::new(0x88, "DEY", AddressMode::Implied, 2),
+            Instruction::ill(0x89),
+            Instruction::new(0x8A, "TXA", AddressMode::Implied, 2),
+            Instruction::ill(0x8B),
+            Instruction::new(0x8C, "STY", AddressMode::Absolute, 4),
+            Instruction::new(0x8D, "STA", AddressMode::Absolute, 4),
+            Instruction::new(0x8E, "STX", AddressMode::Absolute, 4),
+            Instruction::ill(0x8F),
         ];
 
         for ins in v {
@@ -1222,5 +1240,133 @@ mod tests {
         assert_eq!(ins.mnemonic, "ROR");
         assert_eq!(ins.addressing_mode, AddressMode::AbsoluteX);
         assert_eq!(ins.cycle_cost, 7);
+    }
+
+    #[test]
+    pub fn ill_80() {
+        let ins = get_inst(0x80);
+        assert_eq!(ins.mnemonic, "???");
+        assert_eq!(ins.addressing_mode, AddressMode::None);
+        assert_eq!(ins.cycle_cost, 0);
+    }
+
+    #[test]
+    pub fn sta_ind_x() {
+        let ins = get_inst(0x81);
+        assert_eq!(ins.mnemonic, "STA");
+        assert_eq!(ins.addressing_mode, AddressMode::IndirectZeroX);
+        assert_eq!(ins.cycle_cost, 6);
+    }
+
+    #[test]
+    pub fn ill_82() {
+        let ins = get_inst(0x82);
+        assert_eq!(ins.mnemonic, "???");
+        assert_eq!(ins.addressing_mode, AddressMode::None);
+        assert_eq!(ins.cycle_cost, 0);
+    }
+
+    #[test]
+    pub fn ill_83() {
+        let ins = get_inst(0x83);
+        assert_eq!(ins.mnemonic, "???");
+        assert_eq!(ins.addressing_mode, AddressMode::None);
+        assert_eq!(ins.cycle_cost, 0);
+    }
+
+    #[test]
+    pub fn sty_zp() {
+        let ins = get_inst(0x84);
+        assert_eq!(ins.mnemonic, "STY");
+        assert_eq!(ins.addressing_mode, AddressMode::ZeroPage);
+        assert_eq!(ins.cycle_cost, 3);
+    }
+
+    #[test]
+    pub fn sta_zp() {
+        let ins = get_inst(0x85);
+        assert_eq!(ins.mnemonic, "STA");
+        assert_eq!(ins.addressing_mode, AddressMode::ZeroPage);
+        assert_eq!(ins.cycle_cost, 3);
+    }
+
+    #[test]
+    pub fn stx_zp() {
+        let ins = get_inst(0x86);
+        assert_eq!(ins.mnemonic, "STX");
+        assert_eq!(ins.addressing_mode, AddressMode::ZeroPage);
+        assert_eq!(ins.cycle_cost, 3);
+    }
+
+    #[test]
+    pub fn ill_87() {
+        let ins = get_inst(0x87);
+        assert_eq!(ins.mnemonic, "???");
+        assert_eq!(ins.addressing_mode, AddressMode::None);
+        assert_eq!(ins.cycle_cost, 0);
+    }
+
+    #[test]
+    pub fn dey_imp() {
+        let ins = get_inst(0x88);
+        assert_eq!(ins.mnemonic, "DEY");
+        assert_eq!(ins.addressing_mode, AddressMode::Implied);
+        assert_eq!(ins.cycle_cost, 2);
+    }
+
+    #[test]
+    pub fn ill_89() {
+        let ins = get_inst(0x89);
+        assert_eq!(ins.mnemonic, "???");
+        assert_eq!(ins.addressing_mode, AddressMode::None);
+        assert_eq!(ins.cycle_cost, 0);
+    }
+
+    #[test]
+    pub fn txa_imp() {
+        let ins = get_inst(0x8A);
+        assert_eq!(ins.mnemonic, "TXA");
+        assert_eq!(ins.addressing_mode, AddressMode::Implied);
+        assert_eq!(ins.cycle_cost, 2);
+    }
+
+    #[test]
+    pub fn ill_8B() {
+        let ins = get_inst(0x8B);
+        assert_eq!(ins.mnemonic, "???");
+        assert_eq!(ins.addressing_mode, AddressMode::None);
+        assert_eq!(ins.cycle_cost, 0);
+    }
+
+    #[test]
+    pub fn sty_abs() {
+        let ins = get_inst(0x8C);
+        assert_eq!(ins.mnemonic, "STY");
+        assert_eq!(ins.addressing_mode, AddressMode::Absolute);
+        assert_eq!(ins.cycle_cost, 4);
+    }
+
+    #[test]
+    pub fn sta_abs() {
+        let ins = get_inst(0x8D);
+        assert_eq!(ins.mnemonic, "STA");
+        assert_eq!(ins.addressing_mode, AddressMode::Absolute);
+        assert_eq!(ins.cycle_cost, 4);
+    }
+
+    #[test]
+    pub fn stx_abs() {
+        let ins = get_inst(0x8E);
+        assert_eq!(ins.mnemonic, "STX");
+        assert_eq!(ins.addressing_mode, AddressMode::Absolute);
+        assert_eq!(ins.cycle_cost, 4);
+    }
+
+    #[test]
+    pub fn ill_8F() {
+        let ins = get_inst(0x8F);
+        assert_eq!(ins.mnemonic, "???");
+        assert_eq!(ins.addressing_mode, AddressMode::None);
+        assert_eq!(ins.cycle_cost, 0);
     }
 }
