@@ -57,8 +57,8 @@ impl Cpu {
             PLA_IMP => self.pla(op, bus),
             PHP_IMP => self.php(op, bus),
             PLP_IMP => self.plp(op, bus),
-            // INX => self.inx(bus),
-            // DEX => self.dex(bus),
+            INX_IMP => self.inx(op),
+            DEX_IMP => self.dex(op),
             // // Panic
             o => panic!("unknown opcode: {:X}", o),
         }
@@ -263,16 +263,16 @@ impl Cpu {
         self.status = bus.read8(0x0100 | (self.s as u16));
         inst.cycle_cost
     }
-    // fn dex(&mut self, bus: &mut Bus) {
-    //     self.x = self.x.wrapping_sub(1);
-    //     self.set_zero_and_negative_flags(self.x);
-    //     self.set_register_instruction_cycles(bus);
-    // }
-    // fn inx(&mut self, bus: &mut Bus) {
-    //     self.x = self.x.wrapping_add(1);
-    //     self.set_zero_and_negative_flags(self.x);
-    //     self.set_register_instruction_cycles(bus);
-    // }
+    fn dex(&mut self, inst: &Instruction) -> u8 {
+        self.x = self.x.wrapping_sub(1);
+        self.set_zero_and_negative_flags(self.x);
+        inst.cycle_cost
+    }
+    fn inx(&mut self, inst: &Instruction) -> u8 {
+        self.x = self.x.wrapping_add(1);
+        self.set_zero_and_negative_flags(self.x);
+        inst.cycle_cost
+    }
 }
 
 #[cfg(test)]
@@ -1086,35 +1086,34 @@ mod tests {
             assert_eq!(cpu.pc, 1);
         }
     }
-    // #[test]
-    // fn test_dex() {
-    //     for val in 0..=255 {
-    //         let mut bus = Bus::new(vec![DEX]);
-    //         let mut cpu = Cpu::new();
-    //
-    //         cpu.x = val;
-    //         let cycles = cpu.step(&mut bus);
+    #[test]
+    fn test_dex() {
+        for val in 0..=255 {
+            let mut bus = Bus::new(vec![DEX_IMP]);
+            let mut cpu = Cpu::new();
+            cpu.x = val;
+            let cycles = cpu.step(&mut bus);
 
-    //         assert_eq!(cpu.x, val.wrapping_sub(1));
-    //         assert_eq!(cpu.get_flag(FLAG_N), (cpu.x as i8) < 0);
-    //         assert_eq!(cpu.get_flag(FLAG_Z), cpu.x == 0);
-    //         assert_eq!(cycles, 2);
-    //         assert_eq!(cpu.pc,  1);
-    //     }
-    // }
-    // #[test]
-    // fn test_inx() {
-    //     for val in 0..=255 {
-    //         let mut bus = Bus::new(vec![INX]);
-    //         let mut cpu = Cpu::new();
-    //
-    //         cpu.x = val;
-    //         let cycles = cpu.step(&mut bus);
+            assert_eq!(cpu.x, val.wrapping_sub(1));
+            assert_eq!(cpu.get_flag(FLAG_N), (cpu.x as i8) < 0);
+            assert_eq!(cpu.get_flag(FLAG_Z), cpu.x == 0);
+            assert_eq!(cycles, 2);
+            assert_eq!(cpu.pc, 1);
+        }
+    }
+    #[test]
+    fn test_inx() {
+        for val in 0..=255 {
+            let mut bus = Bus::new(vec![INX_IMP]);
+            let mut cpu = Cpu::new();
+            cpu.x = val;
+            let cycles = cpu.step(&mut bus);
 
-    //         assert_eq!(cpu.x, val.wrapping_add(1));
-    //         assert_eq!(cpu.get_flag(FLAG_N), (cpu.x as i8) < 0);
-    //         assert_eq!(cpu.get_flag(FLAG_Z), cpu.x == 0);
-    //         assert_eq!(cycles, 2);
-    //         assert_eq!(cpu.pc,  1);
-    //     }
+            assert_eq!(cpu.x, val.wrapping_add(1));
+            assert_eq!(cpu.get_flag(FLAG_N), (cpu.x as i8) < 0);
+            assert_eq!(cpu.get_flag(FLAG_Z), cpu.x == 0);
+            assert_eq!(cycles, 2);
+            assert_eq!(cpu.pc, 1);
+        }
+    }
 }

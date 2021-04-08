@@ -49,6 +49,9 @@ pub const PHA_IMP: u8 = 0x48;
 pub const PLP_IMP: u8 = 0x28;
 pub const PHP_IMP: u8 = 0x08;
 
+pub const DEX_IMP: u8 = 0xCA;
+pub const INX_IMP: u8 = 0xE8;
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum AddressMode {
     None,
