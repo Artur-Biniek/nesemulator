@@ -1,6 +1,54 @@
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 
+pub const LDA_IMM: u8 = 0xA9;
+pub const LDA_ZP: u8 = 0xA5;
+pub const LDA_ZPX: u8 = 0xB5;
+pub const LDA_IZX: u8 = 0xA1;
+pub const LDA_IZY: u8 = 0xB1;
+pub const LDA_ABS: u8 = 0xAD;
+pub const LDA_ABX: u8 = 0xBD;
+pub const LDA_ABY: u8 = 0xB9;
+
+pub const STA_ZP: u8 = 0x85;
+pub const STA_ZPX: u8 = 0x95;
+pub const STA_IZX: u8 = 0x81;
+pub const STA_IZY: u8 = 0x91;
+pub const STA_ABS: u8 = 0x8D;
+pub const STA_ABX: u8 = 0x9D;
+pub const STA_ABY: u8 = 0x99;
+
+pub const LDX_IMM: u8 = 0xA2;
+pub const LDX_ZP: u8 = 0xA6;
+pub const LDX_ZPY: u8 = 0xB6;
+pub const LDX_ABS: u8 = 0xAE;
+pub const LDX_ABY: u8 = 0xBE;
+
+pub const STX_ZP: u8 = 0x86;
+pub const STX_ZPY: u8 = 0x96;
+pub const STX_ABS: u8 = 0x8E;
+
+pub const LDY_IMM: u8 = 0xA0;
+pub const LDY_ZP: u8 = 0xA4;
+pub const LDY_ZPX: u8 = 0xB4;
+pub const LDY_ABS: u8 = 0xAC;
+pub const LDY_ABX: u8 = 0xBC;
+
+pub const STY_ZP: u8 = 0x84;
+pub const STY_ZPX: u8 = 0x94;
+pub const STY_ABS: u8 = 0x8C;
+
+pub const TAX_IMP: u8 = 0xAA;
+pub const TXA_IMP: u8 = 0x8A;
+pub const TAY_IMP: u8 = 0xA8;
+pub const TYA_IMP: u8 = 0x98;
+pub const TSX_IMP: u8 = 0xBA;
+pub const TXS_IMP: u8 = 0x9A;
+pub const PLA_IMP: u8 = 0x68;
+pub const PHA_IMP: u8 = 0x48;
+pub const PLP_IMP: u8 = 0x28;
+pub const PHP_IMP: u8 = 0x08;
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum AddressMode {
     None,
@@ -72,7 +120,6 @@ lazy_static! {
             Instruction::new(0x0D, "ORA", AddressMode::Absolute, 4),
             Instruction::new(0x0E, "ASL", AddressMode::Absolute, 6),
             Instruction::ill(0x0F),
-            
             // 0x1_
             Instruction::new(0x10, "BPL", AddressMode::Relative, 2),
             Instruction::new(0x11, "ORA", AddressMode::IndirectZeroY, 5),
@@ -126,7 +173,6 @@ lazy_static! {
             Instruction::new(0x3D, "AND", AddressMode::AbsoluteX, 4),
             Instruction::new(0x3E, "ROL", AddressMode::AbsoluteX, 7),
             Instruction::ill(0x3F),
-            
             // 0x4_
             Instruction::new(0x40, "RTI", AddressMode::Implied, 6),
             Instruction::new(0x41, "EOR", AddressMode::IndirectZeroX, 6),
@@ -144,7 +190,6 @@ lazy_static! {
             Instruction::new(0x4D, "EOR", AddressMode::Absolute, 4),
             Instruction::new(0x4E, "LSR", AddressMode::Absolute, 6),
             Instruction::ill(0x4F),
-            
             // 0x5_
             Instruction::new(0x50, "BVC", AddressMode::Relative, 2),
             Instruction::new(0x51, "EOR", AddressMode::IndirectZeroY, 5),
@@ -162,7 +207,6 @@ lazy_static! {
             Instruction::new(0x5D, "EOR", AddressMode::AbsoluteX, 4),
             Instruction::new(0x5E, "LSR", AddressMode::AbsoluteX, 7),
             Instruction::ill(0x5F),
-            
             // 0x6_
             Instruction::new(0x60, "RTS", AddressMode::Implied, 6),
             Instruction::new(0x61, "ADC", AddressMode::IndirectZeroX, 6),
@@ -268,7 +312,7 @@ lazy_static! {
             Instruction::ill(0xBB),
             Instruction::new(0xBC, "LDY", AddressMode::AbsoluteX, 4),
             Instruction::new(0xBD, "LDA", AddressMode::AbsoluteX, 4),
-            Instruction::new(0xBE, "LDX", AddressMode::AbsoluteX, 4),
+            Instruction::new(0xBE, "LDX", AddressMode::AbsoluteY, 4),
             Instruction::ill(0xBF),
 
             // 0xC_
@@ -383,7 +427,6 @@ mod tests {
         assert_eq!(ins.addressing_mode, AddressMode::None);
         assert_eq!(ins.cycle_cost, 0);
     }
-    
     #[test]
     pub fn ill_03() {
         let ins = get_inst(0x03);
@@ -447,7 +490,6 @@ mod tests {
         assert_eq!(ins.addressing_mode, AddressMode::Implied);
         assert_eq!(ins.cycle_cost, 2);
     }
-    
     #[test]
     pub fn ill_0b() {
         let ins = get_inst(0x0B);
@@ -820,7 +862,7 @@ mod tests {
     pub fn and_abs_y() {
         let ins = get_inst(0x39);
         assert_eq!(ins.mnemonic, "AND");
-        assert_eq!(ins.addressing_mode, AddressMode::AbsoluteY                   );
+        assert_eq!(ins.addressing_mode, AddressMode::AbsoluteY);
         assert_eq!(ins.cycle_cost, 4);
     }
 
@@ -1076,7 +1118,7 @@ mod tests {
     pub fn eor_abs_y() {
         let ins = get_inst(0x59);
         assert_eq!(ins.mnemonic, "EOR");
-        assert_eq!(ins.addressing_mode, AddressMode::AbsoluteY                   );
+        assert_eq!(ins.addressing_mode, AddressMode::AbsoluteY);
         assert_eq!(ins.cycle_cost, 4);
     }
 
@@ -1324,7 +1366,7 @@ mod tests {
     pub fn adc_abs_y() {
         let ins = get_inst(0x79);
         assert_eq!(ins.mnemonic, "ADC");
-        assert_eq!(ins.addressing_mode, AddressMode::AbsoluteY                   );
+        assert_eq!(ins.addressing_mode, AddressMode::AbsoluteY);
         assert_eq!(ins.cycle_cost, 4);
     }
 
@@ -1868,7 +1910,7 @@ mod tests {
     pub fn ldx_abs_x() {
         let ins = get_inst(0xBE);
         assert_eq!(ins.mnemonic, "LDX");
-        assert_eq!(ins.addressing_mode, AddressMode::AbsoluteX);
+        assert_eq!(ins.addressing_mode, AddressMode::AbsoluteY);
         assert_eq!(ins.cycle_cost, 4);
     }
 

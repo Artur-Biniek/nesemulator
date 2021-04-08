@@ -1,4 +1,3 @@
-mod bus;
-mod carrdrige;
-mod cpu;
+pub mod bus;
+pub mod cpu;
 mod opcodes;

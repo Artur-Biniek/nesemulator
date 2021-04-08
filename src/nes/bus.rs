@@ -7,7 +7,12 @@ pub const PRG_ROM_END: u16 = 0xFFFF;
 pub struct Bus {
     ram: [u8; 2 * 1024],
     prg_rom: Vec<u8>,
-    cycles: u64,
+}
+
+pub trait Memory {
+    fn write8(&mut self, addr: u16, value: u8);
+    fn read8(&self, addr: u16) -> u8;
+    fn read16(&self, addr: u16) -> u16;
 }
 
 impl Bus {
@@ -15,11 +20,12 @@ impl Bus {
         return Self {
             ram: [0; 2 * 1024],
             prg_rom,
-            cycles: 0,
         };
     }
+}
 
-    pub fn write8(&mut self, addr: u16, value: u8) {
+impl Memory for Bus {
+    fn write8(&mut self, addr: u16, value: u8) {
         match addr {
             0..=RAM_END => self.ram[addr as usize] = value,
             RAM_MIRROR_START..=RAM_MIRROR_END => {
@@ -29,7 +35,7 @@ impl Bus {
         }
     }
 
-    pub fn read8(&self, addr: u16) -> u8 {
+    fn read8(&self, addr: u16) -> u8 {
         match addr {
             0..=RAM_END => self.ram[addr as usize],
             RAM_MIRROR_START..=RAM_MIRROR_END => self.ram[(addr - RAM_MIRROR_START) as usize],
@@ -38,19 +44,11 @@ impl Bus {
         }
     }
 
-    pub fn read16(&self, addr: u16) -> u16 {
+    fn read16(&self, addr: u16) -> u16 {
         let lo = self.read8(addr) as u16;
         let hi = self.read8(addr + 1) as u16;
 
         (hi << 8) | lo
-    }
-
-    pub fn tick(&mut self, cycles: u64) {
-        self.cycles += cycles;
-    }
-
-    pub fn get_cycles(&self) -> u64 {
-        self.cycles
     }
 }
 
