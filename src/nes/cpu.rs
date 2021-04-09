@@ -79,9 +79,21 @@ impl Cpu {
             SBC_IMM | SBC_ZP | SBC_ZPX | SBC_IZX | SBC_IZY | SBC_ABS | SBC_ABX | SBC_ABY => {
                 self.sbc(op, bus)
             }
-
+            CMP_IMM | CMP_ZP | CMP_ZPX | CMP_IZX | CMP_IZY | CMP_ABS | CMP_ABX | CMP_ABY => {
+                self.cmp(op, bus)
+            }
+            CPX_IMM | CPX_ZP | CPX_ABS => self.cpx(op, bus),
+            CPY_IMM | CPY_ZP | CPY_ABS => self.cpy(op, bus),
+            DEC_ZP | DEC_ZPX | DEC_ABS | DEC_ABX => self.dec(op, bus),
+            INC_ZP | INC_ZPX | INC_ABS | INC_ABX => self.inc(op, bus),
             INX_IMP => self.inx(op),
             DEX_IMP => self.dex(op),
+            INY_IMP => self.iny(op),
+            DEY_IMP => self.dey(op),
+            ASL_IMP| ASL_ZP| ASL_ZPX| ASL_ABS| ASL_ABX => self.asl(op, bus),
+            ROL_IMP| ROL_ZP| ROL_ZPX| ROL_ABS| ROL_ABX => self.rol(op, bus),
+            LSR_IMP| LSR_ZP| LSR_ZPX| LSR_ABS| LSR_ABX => self.lsr(op, bus),
+            ROR_IMP| ROR_ZP| ROR_ZPX| ROR_ABS| ROR_ABX => self.ror(op, bus),
             // // Panic
             o => panic!("unknown opcode: {:X}", o),
         }
@@ -355,6 +367,71 @@ impl Cpu {
 
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
+    fn cmp<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    where
+        T: Memory,
+    {
+        let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
+        let m = bus.read8(addr);
+        let tmp = self.a.wrapping_sub(m); 
+
+        self.set_zero_and_negative_flags(tmp);
+        self.set_flag(flags::C, self.a >= m);
+
+        inst.cycle_cost + if page_crossed { 1 } else { 0 }
+    }
+    fn cpx<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    where
+        T: Memory,
+    {
+        let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
+        let m = bus.read8(addr);
+        let tmp = self.x.wrapping_sub(m); 
+
+        self.set_zero_and_negative_flags(tmp);
+        self.set_flag(flags::C, self.x >= m);
+
+        inst.cycle_cost + if page_crossed { 1 } else { 0 }
+    }
+    fn cpy<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    where
+        T: Memory,
+    {
+        let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
+        let m = bus.read8(addr);
+        let tmp = self.y.wrapping_sub(m); 
+
+        self.set_zero_and_negative_flags(tmp);
+        self.set_flag(flags::C, self.y >= m);
+
+        inst.cycle_cost + if page_crossed { 1 } else { 0 }
+    }
+    fn dec<T>(&mut self, inst: &Instruction, bus:&mut T) -> u8 
+    where
+        T: Memory,
+    {
+        let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
+        let m = bus.read8(addr);
+        let r = m.wrapping_sub(1);
+        bus.write8(addr, r);
+
+        self.set_zero_and_negative_flags(r);
+
+        inst.cycle_cost
+    }
+    fn inc<T>(&mut self, inst: &Instruction, bus:&mut T) -> u8 
+    where
+        T: Memory,
+    {
+        let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
+        let m = bus.read8(addr);
+        let r = m.wrapping_add(1);
+        bus.write8(addr, r);
+
+        self.set_zero_and_negative_flags(r);
+
+        inst.cycle_cost
+    }
     fn dex(&mut self, inst: &Instruction) -> u8 {
         self.x = self.x.wrapping_sub(1);
         self.set_zero_and_negative_flags(self.x);
@@ -363,6 +440,72 @@ impl Cpu {
     fn inx(&mut self, inst: &Instruction) -> u8 {
         self.x = self.x.wrapping_add(1);
         self.set_zero_and_negative_flags(self.x);
+        inst.cycle_cost
+    }
+    fn dey(&mut self, inst: &Instruction) -> u8 {
+        self.y = self.y.wrapping_sub(1);
+        self.set_zero_and_negative_flags(self.y);
+        inst.cycle_cost
+    }
+    fn iny(&mut self, inst: &Instruction) -> u8 {
+        self.y = self.y.wrapping_add(1);
+        self.set_zero_and_negative_flags(self.y);
+        inst.cycle_cost
+    }
+    fn asl<T>(&mut self, inst: &Instruction, bus:&mut T) -> u8 
+    where
+        T: Memory,
+    {
+        let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
+        let m = bus.read8(addr);
+        let r = m << 1;
+        bus.write8(addr, r);
+
+        self.set_zero_and_negative_flags(r);
+        self.set_flag(flags::C, m & 0x80 != 0);
+
+        inst.cycle_cost
+    }
+    fn rol<T>(&mut self, inst: &Instruction, bus:&mut T) -> u8 
+    where
+        T: Memory,
+    {
+        let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
+        let m = bus.read8(addr);
+        let r = (m << 1) + if self.get_flag(flags::C) {1} else {0};
+        bus.write8(addr, r);
+
+        self.set_zero_and_negative_flags(r);
+        self.set_flag(flags::C, m & 0x80 != 0);
+
+        inst.cycle_cost
+    }
+    fn lsr<T>(&mut self, inst: &Instruction, bus:&mut T) -> u8 
+    where
+        T: Memory,
+    {
+        let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
+        let m = bus.read8(addr);
+        let r = m >> 1;
+        bus.write8(addr, r);
+
+        self.set_zero_and_negative_flags(r);
+        self.set_flag(flags::C, m & 0x01 != 0);
+
+        inst.cycle_cost
+    }
+    fn ror<T>(&mut self, inst: &Instruction, bus:&mut T) -> u8 
+    where
+        T: Memory,
+    {
+        let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
+        let m = bus.read8(addr);
+        let r = (m >> 1) + 128 * (if self.get_flag(flags::C) {1} else {0});
+        bus.write8(addr, r);
+
+        self.set_zero_and_negative_flags(r);
+        self.set_flag(flags::C, m & 0x01 != 0);
+
         inst.cycle_cost
     }
 }
@@ -2033,5 +2176,420 @@ mod tests {
 
         assert_eq!(cpu.a, -129 as i16 as u8 );
         assert_eq!(cpu.get_flag(flags::V), true);
+    }
+    
+
+    #[test]
+    fn test_cmp_less_with_negative() {
+        let mut bus = Bus::new(0x8000, vec![CMP_IMM, 0x02]);
+        let mut cpu = Cpu::new();
+
+        cpu.a = 0x01;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, 0x01);
+        assert_eq!(cpu.get_flag(flags::N), true);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::C), false);
+    }
+
+    #[test]
+    fn test_cmp_equal() {
+        let mut bus = Bus::new(0x8000, vec![CMP_IMM, 0x02]);
+        let mut cpu = Cpu::new();
+
+        cpu.a = 0x02;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, 0x02);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cpu.get_flag(flags::Z), true);
+        assert_eq!(cpu.get_flag(flags::C), true);
+    }
+
+    #[test]
+    fn test_cmp_greater_with_negative() {
+        let mut bus = Bus::new(0x8000, vec![CMP_IMM, 0x02]);
+        let mut cpu = Cpu::new();
+
+        cpu.a = 0xF2;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, 0xF2);
+        assert_eq!(cpu.get_flag(flags::N), true);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::C), true);
+    }
+
+    #[test]
+    fn test_cpx_less_with_negative() {
+        let mut bus = Bus::new(0x8000, vec![CPX_IMM, 0x02]);
+        let mut cpu = Cpu::new();
+
+        cpu.x = 0x01;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.x, 0x01);
+        assert_eq!(cpu.get_flag(flags::N), true);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::C), false);
+    }
+
+    #[test]
+    fn test_cpx_equal() {
+        let mut bus = Bus::new(0x8000, vec![CPX_IMM, 0x02]);
+        let mut cpu = Cpu::new();
+
+        cpu.x = 0x02;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.x, 0x02);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cpu.get_flag(flags::Z), true);
+        assert_eq!(cpu.get_flag(flags::C), true);
+    }
+
+    #[test]
+    fn test_cpx_greater_with_negative() {
+        let mut bus = Bus::new(0x8000, vec![CPX_IMM, 0x02]);
+        let mut cpu = Cpu::new();
+
+        cpu.x = 0xF2;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.x, 0xF2);
+        assert_eq!(cpu.get_flag(flags::N), true);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::C), true);
+    }
+
+    #[test]
+    fn test_cpy_less_with_negative() {
+        let mut bus = Bus::new(0x8000, vec![CPY_IMM, 0x02]);
+        let mut cpu = Cpu::new();
+
+        cpu.x = 0x01;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.x, 0x01);
+        assert_eq!(cpu.get_flag(flags::N), true);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::C), false);
+    }
+
+    #[test]
+    fn test_cpy_equal() {
+        let mut bus = Bus::new(0x8000, vec![CPY_IMM, 0x02]);
+        let mut cpu = Cpu::new();
+
+        cpu.y = 0x02;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.y, 0x02);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cpu.get_flag(flags::Z), true);
+        assert_eq!(cpu.get_flag(flags::C), true);
+    }
+
+    #[test]
+    fn test_cpy_greater_with_negative() {
+        let mut bus = Bus::new(0x8000, vec![CPY_IMM, 0x02]);
+        let mut cpu = Cpu::new();
+
+        cpu.y = 0xF2;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.y, 0xF2);
+        assert_eq!(cpu.get_flag(flags::N), true);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::C), true);
+    }
+
+    #[test]
+    fn test_dec_abs() {
+        let mut bus = Bus::new(0x8000, vec![DEC_ABS, 0x02, 0x03]);
+        bus.write8(0x0302, 12);
+
+        let mut cpu = Cpu::new();
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(bus.read8(0x0302), 11);
+        assert_eq!(cycles, 6);
+        assert_eq!(cpu.pc - 0x8000, 3);
+    }
+
+    #[test]
+    fn test_inc_abs() {
+        let mut bus = Bus::new(0x8000, vec![INC_ABS, 0x02, 0x03]);
+        bus.write8(0x0302, 12);
+
+        let mut cpu = Cpu::new();
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(bus.read8(0x0302), 13);
+        assert_eq!(cycles, 6);
+        assert_eq!(cpu.pc - 0x8000, 3);
+    }
+
+    #[test]
+    fn test_dey() {
+        for val in 0..=255 {
+            let mut bus = Bus::new(0x8000, vec![DEY_IMP]);
+            let mut cpu = Cpu::new();
+            cpu.y = val;
+            let cycles = cpu.step(&mut bus);
+
+            assert_eq!(cpu.y, val.wrapping_sub(1));
+            assert_eq!(cpu.get_flag(flags::N), (cpu.y as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.y == 0);
+            assert_eq!(cycles, 2);
+            assert_eq!(cpu.pc - 0x8000, 1);
+        }
+    }
+
+    #[test]
+    fn test_iny() {
+        for val in 0..=255 {
+            let mut bus = Bus::new(0x8000, vec![INY_IMP]);
+            let mut cpu = Cpu::new();
+            cpu.y = val;
+            let cycles = cpu.step(&mut bus);
+
+            assert_eq!(cpu.y, val.wrapping_add(1));
+            assert_eq!(cpu.get_flag(flags::N), (cpu.y as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.y == 0);
+            assert_eq!(cycles, 2);
+            assert_eq!(cpu.pc - 0x8000, 1);
+        }
+    }
+
+    #[test]
+    fn test_asl_abs() {
+        let mut bus = Bus::new(0x8000, vec![ASL_ABS, 0x02, 0x03]);
+        bus.write8(0x0302, 0b0100_0000);
+
+        let mut cpu = Cpu::new();
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(bus.read8(0x0302),0b1000_0000);
+        assert_eq!(cpu.get_flag(flags::C), false);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::N), true);
+        assert_eq!(cycles, 6);
+        assert_eq!(cpu.pc - 0x8000, 3);
+    }
+
+    #[test]
+    fn test_asl_abs_carry() {
+        let mut bus = Bus::new(0x8000, vec![ASL_ABS, 0x02, 0x03]);
+        bus.write8(0x0302, 0b1000_0000);
+
+        let mut cpu = Cpu::new();
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(bus.read8(0x0302),0b0000_0000);
+        assert_eq!(cpu.get_flag(flags::C), true);
+        assert_eq!(cpu.get_flag(flags::Z), true);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cycles, 6);
+        assert_eq!(cpu.pc - 0x8000, 3);
+    }
+
+    #[test]
+    fn test_asl_abs_pattern() {
+        let mut bus = Bus::new(0x8000, vec![ASL_ABS, 0x02, 0x03]);
+        bus.write8(0x0302, 0b0010_1010);
+
+        let mut cpu = Cpu::new();
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(bus.read8(0x0302),0b0101_0100);
+        assert_eq!(cpu.get_flag(flags::C), false);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cycles, 6);
+        assert_eq!(cpu.pc - 0x8000, 3);
+    }
+
+    #[test]
+    fn test_rol_abs() {
+        let mut bus = Bus::new(0x8000, vec![ROL_ABS, 0x02, 0x03]);
+        bus.write8(0x0302, 0b0100_0000);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::C, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(bus.read8(0x0302),0b1000_0001);
+        assert_eq!(cpu.get_flag(flags::C), false);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::N), true);
+        assert_eq!(cycles, 6);
+        assert_eq!(cpu.pc - 0x8000, 3);
+    }
+
+    #[test]
+    fn test_rol_abs_carry_out() {
+        let mut bus = Bus::new(0x8000, vec![ROL_ABS, 0x02, 0x03]);
+        bus.write8(0x0302, 0b1000_0000);
+
+        let mut cpu = Cpu::new();
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(bus.read8(0x0302),0b0000_0000);
+        assert_eq!(cpu.get_flag(flags::C), true);
+        assert_eq!(cpu.get_flag(flags::Z), true);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cycles, 6);
+        assert_eq!(cpu.pc - 0x8000, 3);
+    }
+
+    #[test]
+    fn test_rol_abs_carry_in_out() {
+        let mut bus = Bus::new(0x8000, vec![ROL_ABS, 0x02, 0x03]);
+        bus.write8(0x0302, 0b1000_0000);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::C, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(bus.read8(0x0302),0b0000_0001);
+        assert_eq!(cpu.get_flag(flags::C), true);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cycles, 6);
+        assert_eq!(cpu.pc - 0x8000, 3);
+    }
+
+    #[test]
+    fn test_rol_abs_pattern() {
+        let mut bus = Bus::new(0x8000, vec![ROL_ABS, 0x02, 0x03]);
+        bus.write8(0x0302, 0b0010_1010);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::C, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(bus.read8(0x0302),0b0101_0101);
+        assert_eq!(cpu.get_flag(flags::C), false);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cycles, 6);
+        assert_eq!(cpu.pc - 0x8000, 3);
+    }
+
+    #[test]
+    fn test_lsr_abs() {
+        let mut bus = Bus::new(0x8000, vec![LSR_ABS, 0x02, 0x03]);
+        bus.write8(0x0302, 0b0100_0000);
+
+        let mut cpu = Cpu::new();
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(bus.read8(0x0302),0b0010_0000);
+        assert_eq!(cpu.get_flag(flags::C), false);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cycles, 6);
+        assert_eq!(cpu.pc - 0x8000, 3);
+    }
+
+    #[test]
+    fn test_lsr_abs_carry() {
+        let mut bus = Bus::new(0x8000, vec![LSR_ABS, 0x02, 0x03]);
+        bus.write8(0x0302, 0b0000_0001);
+
+        let mut cpu = Cpu::new();
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(bus.read8(0x0302),0b0000_0000);
+        assert_eq!(cpu.get_flag(flags::C), true);
+        assert_eq!(cpu.get_flag(flags::Z), true);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cycles, 6);
+        assert_eq!(cpu.pc - 0x8000, 3);
+    }
+
+    #[test]
+    fn test_lsr_abs_pattern() {
+        let mut bus = Bus::new(0x8000, vec![LSR_ABS, 0x02, 0x03]);
+        bus.write8(0x0302, 0b0010_1010);
+
+        let mut cpu = Cpu::new();
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(bus.read8(0x0302),0b0001_0101);
+        assert_eq!(cpu.get_flag(flags::C), false);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cycles, 6);
+        assert_eq!(cpu.pc - 0x8000, 3);
+    }
+
+    #[test]
+    fn test_ror_abs() {
+        let mut bus = Bus::new(0x8000, vec![ROR_ABS, 0x02, 0x03]);
+        bus.write8(0x0302, 0b0100_0000);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::C, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(bus.read8(0x0302),0b1010_0000);
+        assert_eq!(cpu.get_flag(flags::C), false);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::N), true);
+        assert_eq!(cycles, 6);
+        assert_eq!(cpu.pc - 0x8000, 3);
+    }
+
+    #[test]
+    fn test_ror_abs_carry_out() {
+        let mut bus = Bus::new(0x8000, vec![ROR_ABS, 0x02, 0x03]);
+        bus.write8(0x0302, 0b0000_0001);
+
+        let mut cpu = Cpu::new();
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(bus.read8(0x0302),0b0000_0000);
+        assert_eq!(cpu.get_flag(flags::C), true);
+        assert_eq!(cpu.get_flag(flags::Z), true);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cycles, 6);
+        assert_eq!(cpu.pc - 0x8000, 3);
+    }
+
+    #[test]
+    fn test_ror_abs_carry_in_out() {
+        let mut bus = Bus::new(0x8000, vec![ROR_ABS, 0x02, 0x03]);
+        bus.write8(0x0302, 0b1000_0001);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::C, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(bus.read8(0x0302),0b1100_0000);
+        assert_eq!(cpu.get_flag(flags::C), true);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::N), true);
+        assert_eq!(cycles, 6);
+        assert_eq!(cpu.pc - 0x8000, 3);
+    }
+
+    #[test]
+    fn test_ror_abs_pattern() {
+        let mut bus = Bus::new(0x8000, vec![ROR_ABS, 0x02, 0x03]);
+        bus.write8(0x0302, 0b0010_1010);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::C, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(bus.read8(0x0302), 0b1001_0101);
+        assert_eq!(cpu.get_flag(flags::C), false);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::N), true);
+        assert_eq!(cycles, 6);
+        assert_eq!(cpu.pc - 0x8000, 3);
     }
 }

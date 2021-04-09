@@ -96,8 +96,66 @@ pub const SBC_ABS: u8 = 0xED;
 pub const SBC_ABX: u8 = 0xFD;
 pub const SBC_ABY: u8 = 0xF9;
 
+pub const CMP_IMM: u8 = 0xC9;
+pub const CMP_ZP: u8 = 0xC5;
+pub const CMP_ZPX: u8 = 0xD5;
+pub const CMP_IZX: u8 = 0xC1;
+pub const CMP_IZY: u8 = 0xD1;
+pub const CMP_ABS: u8 = 0xCD;
+pub const CMP_ABX: u8 = 0xDD;
+pub const CMP_ABY: u8 = 0xD9;
+
+pub const CPX_IMM: u8 = 0xE0;
+pub const CPX_ZP: u8 = 0xE4;
+pub const CPX_ABS: u8 = 0xEC;
+
+pub const CPY_IMM: u8 = 0xC0;
+pub const CPY_ZP: u8 = 0xC4;
+pub const CPY_ABS: u8 = 0xCC;
+
+pub const DEC_ZP: u8 = 0xC6;
+pub const DEC_ZPX: u8 = 0xD6;
+pub const DEC_ABS: u8 = 0xCE;
+pub const DEC_ABX: u8 = 0xDE;
+
+pub const INC_ZP: u8 = 0xE6;
+pub const INC_ZPX: u8 = 0xF6;
+pub const INC_ABS: u8 = 0xEE;
+pub const INC_ABX: u8 = 0xFE;
+
 pub const DEX_IMP: u8 = 0xCA;
 pub const INX_IMP: u8 = 0xE8;
+
+pub const DEY_IMP: u8 = 0x88;
+pub const INY_IMP: u8 = 0xC8;
+
+pub const ASL_IMP: u8 = 0x0A;
+pub const ASL_ZP: u8 = 0x06;
+pub const ASL_ZPX: u8 = 0x16;
+pub const ASL_ABS: u8 = 0x0E;
+pub const ASL_ABX: u8 = 0x1E;
+
+pub const ROL_IMP: u8 = 0x2A;
+pub const ROL_ZP: u8 = 0x26;
+pub const ROL_ZPX: u8 = 0x36;
+pub const ROL_ABS: u8 = 0x2E;
+pub const ROL_ABX: u8 = 0x3E;
+
+pub const LSR_IMP: u8 = 0x4A;
+pub const LSR_ZP: u8 = 0x46;
+pub const LSR_ZPX: u8 = 0x56;
+pub const LSR_ABS: u8 = 0x4E;
+pub const LSR_ABX: u8 = 0x5E;
+
+pub const ROR_IMP: u8 = 0x6A;
+pub const ROR_ZP: u8 = 0x66;
+pub const ROR_ZPX: u8 = 0x76;
+pub const ROR_ABS: u8 = 0x6E;
+pub const ROR_ABX: u8 = 0x7E;
+
+
+
+
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum AddressMode {
