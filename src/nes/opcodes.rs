@@ -153,6 +153,10 @@ pub const ROR_ZPX: u8 = 0x76;
 pub const ROR_ABS: u8 = 0x6E;
 pub const ROR_ABX: u8 = 0x7E;
 
+// Jump/Flag commands
+pub const BPL_REL: u8 = 0x10;
+pub const BMI_REL: u8 = 0x30;
+
 
 
 

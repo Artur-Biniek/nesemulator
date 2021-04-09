@@ -94,7 +94,9 @@ impl Cpu {
             ROL_IMP| ROL_ZP| ROL_ZPX| ROL_ABS| ROL_ABX => self.rol(op, bus),
             LSR_IMP| LSR_ZP| LSR_ZPX| LSR_ABS| LSR_ABX => self.lsr(op, bus),
             ROR_IMP| ROR_ZP| ROR_ZPX| ROR_ABS| ROR_ABX => self.ror(op, bus),
-            // // Panic
+            BPL_REL => self.bpl(op, bus),
+            BMI_REL => self.bmi(op, bus),
+            // Panic
             o => panic!("unknown opcode: {:X}", o),
         }
     }
@@ -163,6 +165,14 @@ impl Cpu {
                 let fin = target.wrapping_add(self.y as u16);
 
                 Address(fin, target & 0xFF00 != fin & 0xFF00)
+            }
+            AddressMode::Relative => {
+                let addr = bus.read8(self.pc) as i8;
+                self.pc += 1;
+
+                let target = self.pc.wrapping_add(addr as u16);
+
+                Address(target, target & 0xFF00 != self.pc & 0xFF00)
             }
             _ => panic!("Unsupported addresing mode"),
         }
@@ -508,6 +518,33 @@ impl Cpu {
 
         inst.cycle_cost
     }
+    fn bpl<T>(&mut self, inst: &Instruction, bus:&mut T) -> u8 
+    where
+        T: Memory,
+    {
+        let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
+        let branch_taken = !self.get_flag(flags::N);
+
+        if branch_taken {
+            self.pc = addr;
+        }
+
+        inst.cycle_cost + if branch_taken {1 + if page_crossed {1} else {0}} else {0}
+    }
+    fn bmi<T>(&mut self, inst: &Instruction, bus:&mut T) -> u8 
+    where
+        T: Memory,
+    {
+        let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
+        let branch_taken = self.get_flag(flags::N);
+
+        if branch_taken {
+            self.pc = addr;
+        }
+
+        inst.cycle_cost + if branch_taken {1 + if page_crossed {1} else {0}} else {0}
+    }
+
 }
 
 #[cfg(test)]
@@ -2591,5 +2628,77 @@ mod tests {
         assert_eq!(cpu.get_flag(flags::N), true);
         assert_eq!(cycles, 6);
         assert_eq!(cpu.pc - 0x8000, 3);
+    }
+
+    #[test]
+    fn test_bpl_taken_diffrent_page() {
+        let mut bus = Bus::new(0x8000, vec![BPL_REL, -20 as i8 as u8]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::N, false);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 - 20 + 2);
+        assert_eq!(cycles, 4);
+    }
+
+    #[test]
+    fn test_bpl_taken_same_page() {
+        let mut bus = Bus::new(0x8000, vec![BPL_REL, 20]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::N, false);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 + 20 + 2);
+        assert_eq!(cycles, 3);
+    }
+
+    #[test]
+    fn test_bpl_not_taken() {
+        let mut bus = Bus::new(0x8000, vec![BPL_REL, 20]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::N, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 + 2);
+        assert_eq!(cycles, 2);
+    }
+
+    #[test]
+    fn test_bmi_taken_diffrent_page() {
+        let mut bus = Bus::new(0x8000, vec![BMI_REL, -20 as i8 as u8]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::N, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 - 20 + 2);
+        assert_eq!(cycles, 4);
+    }
+
+    #[test]
+    fn test_bmi_taken_same_page() {
+        let mut bus = Bus::new(0x8000, vec![BMI_REL, 20]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::N, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 + 20 + 2);
+        assert_eq!(cycles, 3);
+    }
+
+    #[test]
+    fn test_bmi_not_taken() {
+        let mut bus = Bus::new(0x8000, vec![BMI_REL, 20]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::N, false);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 + 2);
+        assert_eq!(cycles, 2);
     }
 }
