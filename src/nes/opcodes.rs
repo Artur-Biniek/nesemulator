@@ -156,9 +156,12 @@ pub const ROR_ABX: u8 = 0x7E;
 // Jump/Flag commands
 pub const BPL_REL: u8 = 0x10;
 pub const BMI_REL: u8 = 0x30;
-
-
-
+pub const BVC_REL: u8 = 0x50;
+pub const BVS_REL: u8 = 0x70;
+pub const BCC_REL: u8 = 0x90;
+pub const BCS_REL: u8 = 0xB0;
+pub const BNE_REL: u8 = 0xD0;
+pub const BEQ_REL: u8 = 0xF0;
 
 
 #[derive(Debug, Copy, Clone, PartialEq)]

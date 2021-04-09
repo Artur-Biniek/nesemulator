@@ -94,8 +94,14 @@ impl Cpu {
             ROL_IMP| ROL_ZP| ROL_ZPX| ROL_ABS| ROL_ABX => self.rol(op, bus),
             LSR_IMP| LSR_ZP| LSR_ZPX| LSR_ABS| LSR_ABX => self.lsr(op, bus),
             ROR_IMP| ROR_ZP| ROR_ZPX| ROR_ABS| ROR_ABX => self.ror(op, bus),
-            BPL_REL => self.bpl(op, bus),
-            BMI_REL => self.bmi(op, bus),
+            BPL_REL => self.branch(op, bus, flags::N, false),
+            BMI_REL => self.branch(op, bus, flags::N, true),
+            BVC_REL => self.branch(op, bus, flags::V, false),
+            BVS_REL => self.branch(op, bus, flags::V, true),
+            BCC_REL => self.branch(op, bus, flags::C, false),
+            BCS_REL => self.branch(op, bus, flags::C, true),
+            BNE_REL => self.branch(op, bus, flags::Z, false),
+            BEQ_REL => self.branch(op, bus, flags::Z, true),
             // Panic
             o => panic!("unknown opcode: {:X}", o),
         }
@@ -518,12 +524,12 @@ impl Cpu {
 
         inst.cycle_cost
     }
-    fn bpl<T>(&mut self, inst: &Instruction, bus:&mut T) -> u8 
+    fn branch<T>(&mut self, inst: &Instruction, bus:&mut T, flag: u8, branch_when: bool) -> u8 
     where
         T: Memory,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
-        let branch_taken = !self.get_flag(flags::N);
+        let branch_taken = self.get_flag(flag) == branch_when;
 
         if branch_taken {
             self.pc = addr;
@@ -531,20 +537,6 @@ impl Cpu {
 
         inst.cycle_cost + if branch_taken {1 + if page_crossed {1} else {0}} else {0}
     }
-    fn bmi<T>(&mut self, inst: &Instruction, bus:&mut T) -> u8 
-    where
-        T: Memory,
-    {
-        let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
-        let branch_taken = self.get_flag(flags::N);
-
-        if branch_taken {
-            self.pc = addr;
-        }
-
-        inst.cycle_cost + if branch_taken {1 + if page_crossed {1} else {0}} else {0}
-    }
-
 }
 
 #[cfg(test)]
@@ -2700,5 +2692,224 @@ mod tests {
 
         assert_eq!(cpu.pc, 0x8000 + 2);
         assert_eq!(cycles, 2);
+    }
+
+    #[test]
+    fn test_bvc_taken_diffrent_page() {
+        let mut bus = Bus::new(0x8000, vec![BVC_REL, -20 as i8 as u8]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::V, false);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 - 20 + 2);
+        assert_eq!(cycles, 4);
+    }
+
+    #[test]
+    fn test_bvc_taken_same_page() {
+        let mut bus = Bus::new(0x8000, vec![BVC_REL, 20]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::V, false);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 + 20 + 2);
+        assert_eq!(cycles, 3);
+    }
+
+    #[test]
+    fn test_bvc_not_taken() {
+        let mut bus = Bus::new(0x8000, vec![BVC_REL, 20]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::V, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 + 2);
+        assert_eq!(cycles, 2);
+    }
+
+    #[test]
+    fn test_bvs_taken_same_page() {
+        let mut bus = Bus::new(0x8000, vec![BVS_REL, 20]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::V, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 + 20 + 2);
+        assert_eq!(cycles, 3);
+    }
+
+    #[test]
+    fn test_bvs_not_taken() {
+        let mut bus = Bus::new(0x8000, vec![BVS_REL, 20]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::V, false);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 + 2);
+        assert_eq!(cycles, 2);
+    }
+
+    #[test]
+    fn test_bvs_taken_diffrent_page() {
+        let mut bus = Bus::new(0x8000, vec![BVS_REL, -20 as i8 as u8]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::V, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 - 20 + 2);
+        assert_eq!(cycles, 4);
+    }
+
+    #[test]
+    fn test_bcc_taken_diffrent_page() {
+        let mut bus = Bus::new(0x8000, vec![BCC_REL, -20 as i8 as u8]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::C, false);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 - 20 + 2);
+        assert_eq!(cycles, 4);
+    }
+
+    #[test]
+    fn test_bcc_taken_same_page() {
+        let mut bus = Bus::new(0x8000, vec![BCC_REL, 20]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::C, false);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 + 20 + 2);
+        assert_eq!(cycles, 3);
+    }
+
+    #[test]
+    fn test_bcc_not_taken() {
+        let mut bus = Bus::new(0x8000, vec![BCC_REL, 20]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::C, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 + 2);
+        assert_eq!(cycles, 2);
+    }
+
+    #[test]
+    fn test_bcs_taken_same_page() {
+        let mut bus = Bus::new(0x8000, vec![BCS_REL, 20]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::C, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 + 20 + 2);
+        assert_eq!(cycles, 3);
+    }
+
+    #[test]
+    fn test_bcs_not_taken() {
+        let mut bus = Bus::new(0x8000, vec![BCS_REL, 20]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::C, false);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 + 2);
+        assert_eq!(cycles, 2);
+    }
+
+    #[test]
+    fn test_bcs_taken_diffrent_page() {
+        let mut bus = Bus::new(0x8000, vec![BCS_REL, -20 as i8 as u8]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::C, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 - 20 + 2);
+        assert_eq!(cycles, 4);
+    }
+
+
+
+
+    #[test]
+    fn test_bne_taken_diffrent_page() {
+        let mut bus = Bus::new(0x8000, vec![BNE_REL, -20 as i8 as u8]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::Z, false);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 - 20 + 2);
+        assert_eq!(cycles, 4);
+    }
+
+    #[test]
+    fn test_bne_taken_same_page() {
+        let mut bus = Bus::new(0x8000, vec![BNE_REL, 20]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::Z, false);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 + 20 + 2);
+        assert_eq!(cycles, 3);
+    }
+
+    #[test]
+    fn test_bne_not_taken() {
+        let mut bus = Bus::new(0x8000, vec![BNE_REL, 20]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::Z, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 + 2);
+        assert_eq!(cycles, 2);
+    }
+
+    #[test]
+    fn test_beq_taken_same_page() {
+        let mut bus = Bus::new(0x8000, vec![BEQ_REL, 20]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::Z, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 + 20 + 2);
+        assert_eq!(cycles, 3);
+    }
+
+    #[test]
+    fn test_beq_not_taken() {
+        let mut bus = Bus::new(0x8000, vec![BEQ_REL, 20]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::Z, false);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 + 2);
+        assert_eq!(cycles, 2);
+    }
+
+    #[test]
+    fn test_beq_taken_diffrent_page() {
+        let mut bus = Bus::new(0x8000, vec![BEQ_REL, -20 as i8 as u8]);
+
+        let mut cpu = Cpu::new();
+        cpu.set_flag(flags::Z, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8000 - 20 + 2);
+        assert_eq!(cycles, 4);
     }
 }
