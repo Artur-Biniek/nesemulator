@@ -60,6 +60,15 @@ pub const ORA_ABS: u8 = 0x0D;
 pub const ORA_ABX: u8 = 0x1D;
 pub const ORA_ABY: u8 = 0x19;
 
+pub const AND_IMM: u8 = 0x29;
+pub const AND_ZP: u8 = 0x25;
+pub const AND_ZPX: u8 = 0x35;
+pub const AND_IZX: u8 = 0x21;
+pub const AND_IZY: u8 = 0x31;
+pub const AND_ABS: u8 = 0x2D;
+pub const AND_ABX: u8 = 0x3D;
+pub const AND_ABY: u8 = 0x39;
+
 pub const DEX_IMP: u8 = 0xCA;
 pub const INX_IMP: u8 = 0xE8;
 
