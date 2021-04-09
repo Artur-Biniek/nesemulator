@@ -78,6 +78,24 @@ pub const EOR_ABS: u8 = 0x4D;
 pub const EOR_ABX: u8 = 0x5D;
 pub const EOR_ABY: u8 = 0x59;
 
+pub const ADC_IMM: u8 = 0x69;
+pub const ADC_ZP: u8 = 0x65;
+pub const ADC_ZPX: u8 = 0x75;
+pub const ADC_IZX: u8 = 0x61;
+pub const ADC_IZY: u8 = 0x71;
+pub const ADC_ABS: u8 = 0x6D;
+pub const ADC_ABX: u8 = 0x7D;
+pub const ADC_ABY: u8 = 0x79;
+
+pub const SBC_IMM: u8 = 0xE9;
+pub const SBC_ZP: u8 = 0xE5;
+pub const SBC_ZPX: u8 = 0xF5;
+pub const SBC_IZX: u8 = 0xE1;
+pub const SBC_IZY: u8 = 0xF1;
+pub const SBC_ABS: u8 = 0xED;
+pub const SBC_ABX: u8 = 0xFD;
+pub const SBC_ABY: u8 = 0xF9;
+
 pub const DEX_IMP: u8 = 0xCA;
 pub const INX_IMP: u8 = 0xE8;
 

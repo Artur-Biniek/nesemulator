@@ -5,8 +5,13 @@ use super::opcodes::*;
 struct Address(u16, bool);
 
 const FLAG_N: u8 = 1 << 7;
-
+const FLAG_V: u8 = 1 << 6;
+// 1 << 5 unused
+const FLAG_B: u8 = 1 << 4;
+const FLAG_D: u8 = 1 << 3;
+const FLAG_I: u8 = 1 << 2;
 const FLAG_Z: u8 = 1 << 1;
+const FLAG_C: u8 = 1 << 0;
 
 pub struct Cpu {
     a: u8,
@@ -65,6 +70,12 @@ impl Cpu {
             }
             EOR_IMM | EOR_ZP | EOR_ZPX | EOR_IZX | EOR_IZY | EOR_ABS | EOR_ABX | EOR_ABY => {
                 self.eor(op, bus)
+            }
+            ADC_IMM | ADC_ZP | ADC_ZPX | ADC_IZX | ADC_IZY | ADC_ABS | ADC_ABX | ADC_ABY => {
+                self.adc(op, bus)
+            }
+            SBC_IMM | SBC_ZP | SBC_ZPX | SBC_IZX | SBC_IZY | SBC_ABS | SBC_ABX | SBC_ABY => {
+                self.sbc(op, bus)
             }
 
             INX_IMP => self.inx(op),
@@ -292,6 +303,30 @@ impl Cpu {
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
     fn eor<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    where
+        T: Memory,
+    {
+        let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
+        self.a ^= bus.read8(addr);
+        self.set_zero_and_negative_flags(self.a);
+        inst.cycle_cost + if page_crossed { 1 } else { 0 }
+    }
+    fn adc<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    where
+        T: Memory,
+    {
+        let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
+        let arg = bus.read8(addr);
+        let carry = if self.get_flag(FLAG_C) {1} else {0};
+        let arg_with_c = arg.wrapping_add(carry);
+        let a = self.a;
+
+        self.a = a.wrapping_add(arg_with_c);
+        self.set_zero_and_negative_flags(self.a);
+        self.set_flag(FLAG_C, (a as u16 + arg as u16 + carry as u16) > 0xff);
+        inst.cycle_cost + if page_crossed { 1 } else { 0 }
+    }
+    fn sbc<T>(&mut self, inst: &Instruction, bus: &T) -> u8
     where
         T: Memory,
     {
@@ -1715,5 +1750,94 @@ mod tests {
             assert_eq!(cycles, if page_crossed { 6 } else { 5 });
             assert_eq!(cpu.pc - 0x8000, 2);
         }
+    }
+
+    #[test]
+    fn test_adc_imm() {
+        for val in 0..=255 {
+            let mut bus = Bus::new(0x8000, vec![ADC_IMM, val]);
+            let mut cpu = Cpu::new();
+            let org_a = 0x0f;
+
+            cpu.a = org_a;
+            let cycles = cpu.step(&mut bus);
+
+            assert_eq!(cpu.a,org_a.wrapping_add(val));
+            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cycles, 2);
+            assert_eq!(cpu.pc - 0x8000, 2);
+        }
+    }
+
+    #[test]
+    fn test_adc_carry_input() {
+        for val in 0..=255 {
+            let mut bus = Bus::new(0x8000, vec![ADC_IMM, val]);
+            let mut cpu = Cpu::new();
+            let org_a = 0x0f;
+
+            cpu.a = org_a;
+            cpu.set_flag(FLAG_C, true);
+            let cycles = cpu.step(&mut bus);
+
+            assert_eq!(cpu.a,org_a.wrapping_add(val).wrapping_add(1));
+            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cycles, 2);
+            assert_eq!(cpu.pc - 0x8000, 2);
+        }
+    }
+
+    #[test]
+    fn test_adc_carry_output_when_no_carry() {
+        let mut bus = Bus::new(0x8000, vec![ADC_IMM, 0xf0]);
+        let mut cpu = Cpu::new();
+        let org_a = 0x0f;
+
+        cpu.a = org_a;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, 0xff);
+        assert_eq!(cpu.get_flag(FLAG_N), true);
+        assert_eq!(cpu.get_flag(FLAG_Z), false);
+        assert_eq!(cpu.get_flag(FLAG_C), false);
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.pc - 0x8000, 2);
+    }
+
+    #[test]
+    fn test_adc_carry_output_when_carry() {
+        let mut bus = Bus::new(0x8000, vec![ADC_IMM, 0x0f]);
+        let mut cpu = Cpu::new();
+        let org_a = 0xf2;
+
+        cpu.a = org_a;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, 0x01);
+        assert_eq!(cpu.get_flag(FLAG_N), false);
+        assert_eq!(cpu.get_flag(FLAG_Z), false);
+        assert_eq!(cpu.get_flag(FLAG_C), true);
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.pc - 0x8000, 2);
+    }
+
+    #[test]
+    fn test_adc_carry_output_when_carry_due_to_carry() {
+        let mut bus = Bus::new(0x8000, vec![ADC_IMM, 0x0f]);
+        let mut cpu = Cpu::new();
+        let org_a = 0xf0;
+
+        cpu.a = org_a;
+        cpu.set_flag(FLAG_C, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, 0x00);
+        assert_eq!(cpu.get_flag(FLAG_N), false);
+        assert_eq!(cpu.get_flag(FLAG_Z), true);
+        assert_eq!(cpu.get_flag(FLAG_C), true);
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.pc - 0x8000, 2);
     }
 }
