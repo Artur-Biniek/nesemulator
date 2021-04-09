@@ -63,6 +63,9 @@ impl Cpu {
             AND_IMM | AND_ZP | AND_ZPX | AND_IZX | AND_IZY | AND_ABS | AND_ABX | AND_ABY => {
                 self.and(op, bus)
             }
+            EOR_IMM | EOR_ZP | EOR_ZPX | EOR_IZX | EOR_IZY | EOR_ABS | EOR_ABX | EOR_ABY => {
+                self.eor(op, bus)
+            }
 
             INX_IMP => self.inx(op),
             DEX_IMP => self.dex(op),
@@ -285,6 +288,15 @@ impl Cpu {
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         self.a &= bus.read8(addr);
+        self.set_zero_and_negative_flags(self.a);
+        inst.cycle_cost + if page_crossed { 1 } else { 0 }
+    }
+    fn eor<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    where
+        T: Memory,
+    {
+        let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
+        self.a ^= bus.read8(addr);
         self.set_zero_and_negative_flags(self.a);
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
@@ -1511,6 +1523,193 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 & !val);
+            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cycles, if page_crossed { 6 } else { 5 });
+            assert_eq!(cpu.pc - 0x8000, 2);
+        }
+    }
+
+    #[test]
+    fn test_eor_imm() {
+        for val in 0..=255 {
+            let mut bus = Bus::new(0x8000, vec![EOR_IMM, val]);
+            let mut cpu = Cpu::new();
+            cpu.a = 0b1010_0101;
+            let cycles = cpu.step(&mut bus);
+
+            assert_eq!(cpu.a, 0b1010_0101 ^ val);
+            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cycles, 2);
+            assert_eq!(cpu.pc - 0x8000, 2);
+        }
+    }
+
+    #[test]
+    fn test_eor_zp() {
+        for val in 0..=255 {
+            let mut bus = Bus::new(0x8000, vec![EOR_ZP, val]);
+            bus.write8(val as u16, val);
+            let mut cpu = Cpu::new();
+            cpu.a = 0b1010_0101;
+            let cycles = cpu.step(&mut bus);
+
+            assert_eq!(cpu.a, 0b1010_0101 ^ val);
+            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cycles, 3);
+            assert_eq!(cpu.pc - 0x8000, 2);
+        }
+    }
+
+    #[test]
+    fn test_eor_zpx() {
+        for val in 0..=255 {
+            let mut bus = Bus::new(0x8000, vec![EOR_ZPX, val]);
+
+            let mut cpu = Cpu::new();
+            cpu.x = 0xf0;
+            bus.write8(val.wrapping_add(cpu.x) as u16, !val);
+
+            cpu.a = 0b1010_0101;
+            let cycles = cpu.step(&mut bus);
+
+            assert_eq!(cpu.a, 0b1010_0101 ^ !val);
+            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cycles, 4);
+            assert_eq!(cpu.pc - 0x8000, 2);
+        }
+    }
+
+    #[test]
+    fn test_eor_abs() {
+        for val in 0..=255 {
+            let mut bus = Bus::new(0x8000, vec![EOR_ABS, val, 0xf0]);
+
+            let mut cpu = Cpu::new();
+            bus.write8(0xf000 + val as u16, !val);
+
+            cpu.a = 0b1010_0101;
+            let cycles = cpu.step(&mut bus);
+
+            assert_eq!(cpu.a, 0b1010_0101 ^ !val);
+            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cycles, 4);
+            assert_eq!(cpu.pc - 0x8000, 3);
+        }
+    }
+
+    #[test]
+    fn test_eor_abx() {
+        for val in 0..=255 {
+            let lo = val;
+            let hi = 0x02;
+
+            let mut bus = Bus::new(0x8000, vec![EOR_ABX, lo, hi]);
+
+            let mut cpu = Cpu::new();
+            cpu.x = 0xf0;
+            cpu.a = 0b1010_0101;
+
+            let base = u16::from_le_bytes([lo, hi]);
+            let target = base.wrapping_add(cpu.x as u16);
+            let page_crossed = (base ^ target) & 0xff00 != 0;
+            bus.write8(target, !val);
+
+            let cycles = cpu.step(&mut bus);
+
+            assert_eq!(cpu.a, 0b1010_0101 ^ !val);
+            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cycles, if page_crossed { 5 } else { 4 });
+            assert_eq!(cpu.pc - 0x8000, 3);
+        }
+    }
+
+    #[test]
+    fn test_eor_aby() {
+        for val in 0..=255 {
+            let lo = val;
+            let hi = 0x02;
+
+            let mut bus = Bus::new(0x8000, vec![EOR_ABY, lo, hi]);
+
+            let mut cpu = Cpu::new();
+            cpu.y = 0xf1;
+            cpu.a = 0b1010_0101;
+
+            let base = u16::from_le_bytes([lo, hi]);
+            let target = base.wrapping_add(cpu.y as u16);
+            let page_crossed = (base ^ target) & 0xff00 != 0;
+            bus.write8(target, !val);
+
+            let cycles = cpu.step(&mut bus);
+
+            assert_eq!(cpu.a, 0b1010_0101 ^ !val);
+            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cycles, if page_crossed { 5 } else { 4 });
+            assert_eq!(cpu.pc - 0x8000, 3);
+        }
+    }
+
+    #[test]
+    fn test_eor_izx() {
+        for val in 0..=255 {
+            let lo = val;
+            let hi = 0x02;
+
+            let mut bus = Bus::new(0x8000, vec![EOR_IZX, val]);
+
+            let mut cpu = Cpu::new();
+            cpu.x = 0xf0;
+            cpu.a = 0b1010_0101;
+
+            let base = u16::from_le_bytes([lo, hi]);
+            bus.write8(base, !val);
+
+            let target = val.wrapping_add(cpu.x) as u16;
+            let target_p1 = val.wrapping_add(cpu.x + 1) as u16;
+            bus.write8(target, lo);
+            bus.write8(target_p1, hi);
+
+            let cycles = cpu.step(&mut bus);
+
+            assert_eq!(cpu.a, 0b1010_0101 ^ !val);
+            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cycles, 6);
+            assert_eq!(cpu.pc - 0x8000, 2);
+        }
+    }
+
+    #[test]
+    fn test_eor_izy() {
+        for val in 0..=255 {
+            let lo = val;
+            let hi = 0x02;
+
+            let mut bus = Bus::new(0x8000, vec![EOR_IZY, val]);
+
+            let mut cpu = Cpu::new();
+            cpu.y = 0xf1;
+            cpu.a = 0b1010_0101;
+
+            let base = u16::from_le_bytes([lo, hi]);
+            let target = base.wrapping_add(cpu.y as u16);
+            let page_crossed = (base ^ target) & 0xff00 != 0;
+
+            bus.write8(val as u16, lo);
+            bus.write8(val.wrapping_add(1) as u16, hi);
+
+            bus.write8(target, !val);
+
+            let cycles = cpu.step(&mut bus);
+
+            assert_eq!(cpu.a, 0b1010_0101 ^ !val);
             assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
             assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
             assert_eq!(cycles, if page_crossed { 6 } else { 5 });
