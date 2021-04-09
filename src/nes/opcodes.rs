@@ -1,6 +1,7 @@
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 
+// Movee commands
 pub const LDA_IMM: u8 = 0xA9;
 pub const LDA_ZP: u8 = 0xA5;
 pub const LDA_ZPX: u8 = 0xB5;
@@ -48,6 +49,16 @@ pub const PLA_IMP: u8 = 0x68;
 pub const PHA_IMP: u8 = 0x48;
 pub const PLP_IMP: u8 = 0x28;
 pub const PHP_IMP: u8 = 0x08;
+
+// Logical and arithmetic commands
+pub const ORA_IMM: u8 = 0x09;
+pub const ORA_ZP: u8 = 0x05;
+pub const ORA_ZPX: u8 = 0x15;
+pub const ORA_IZX: u8 = 0x01;
+pub const ORA_IZY: u8 = 0x11;
+pub const ORA_ABS: u8 = 0x0D;
+pub const ORA_ABX: u8 = 0x1D;
+pub const ORA_ABY: u8 = 0x19;
 
 pub const DEX_IMP: u8 = 0xCA;
 pub const INX_IMP: u8 = 0xE8;
