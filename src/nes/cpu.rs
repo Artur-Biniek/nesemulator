@@ -4,14 +4,16 @@ use super::opcodes::*;
 
 struct Address(u16, bool);
 
-const FLAG_N: u8 = 1 << 7;
-const FLAG_V: u8 = 1 << 6;
-// 1 << 5 unused
-const FLAG_B: u8 = 1 << 4;
-const FLAG_D: u8 = 1 << 3;
-const FLAG_I: u8 = 1 << 2;
-const FLAG_Z: u8 = 1 << 1;
-const FLAG_C: u8 = 1 << 0;
+mod flags {
+    pub const N: u8 = 1 << 7;
+    pub const V: u8 = 1 << 6;
+    // 1 << 5 unused
+    pub const B: u8 = 1 << 4;
+    pub const D: u8 = 1 << 3;
+    pub const I: u8 = 1 << 2;
+    pub const Z: u8 = 1 << 1;
+    pub const C: u8 = 1 << 0;
+}
 
 pub struct Cpu {
     a: u8,
@@ -167,8 +169,8 @@ impl Cpu {
     }
 
     fn set_zero_and_negative_flags(&mut self, value: u8) {
-        self.set_flag(FLAG_N, (value as i8) < 0);
-        self.set_flag(FLAG_Z, value == 0);
+        self.set_flag(flags::N, (value as i8) < 0);
+        self.set_flag(flags::Z, value == 0);
     }
 
     fn lda<T>(&mut self, inst: &Instruction, bus: &T) -> u8
@@ -317,13 +319,19 @@ impl Cpu {
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         let arg = bus.read8(addr);
-        let carry = if self.get_flag(FLAG_C) {1} else {0};
+        let carry = if self.get_flag(flags::C) {1} else {0};
         let arg_with_c = arg.wrapping_add(carry);
         let a = self.a;
 
         self.a = a.wrapping_add(arg_with_c);
         self.set_zero_and_negative_flags(self.a);
-        self.set_flag(FLAG_C, (a as u16 + arg as u16 + carry as u16) > 0xff);
+
+        let c6 = ((0x7F & a as u16) + (0x7F & arg as u16) + (carry as u16)) & 0x080 != 0;
+        let c7 = ((0xFF & a as u16) + (0xFF & arg as u16) + (carry as u16)) & 0x100 != 0;
+
+        self.set_flag(flags::C, (a as u16 + arg as u16 + carry as u16) > 0xff);
+        self.set_flag(flags::V, c6 ^ c7);
+
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
     fn sbc<T>(&mut self, inst: &Instruction, bus: &T) -> u8
@@ -331,8 +339,20 @@ impl Cpu {
         T: Memory,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
-        self.a ^= bus.read8(addr);
+        let arg = !bus.read8(addr);
+        let carry = if self.get_flag(flags::C) {1} else {0};
+        let arg_with_c = arg.wrapping_add(carry);
+        let a = self.a;
+
+        self.a = a.wrapping_add(arg_with_c);
         self.set_zero_and_negative_flags(self.a);
+
+        let c6 = ((0x7F & a as u16) + (0x7F & arg as u16) + (carry as u16)) & 0x080 != 0;
+        let c7 = ((0xFF & a as u16) + (0xFF & arg as u16) + (carry as u16)) & 0x100 != 0;
+
+        self.set_flag(flags::C, (a as u16 + arg as u16 + carry as u16) > 0xff);
+        self.set_flag(flags::V, c6 ^ c7);
+
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
     fn dex(&mut self, inst: &Instruction) -> u8 {
@@ -391,8 +411,8 @@ mod tests {
     fn test_state_after_new() {
         let cpu = Cpu::new();
         assert_eq!(cpu.a, 0);
-        assert!(!cpu.get_flag(FLAG_Z));
-        assert!(!cpu.get_flag(FLAG_N));
+        assert!(!cpu.get_flag(flags::Z));
+        assert!(!cpu.get_flag(flags::N));
     }
 
     #[test]
@@ -406,8 +426,8 @@ mod tests {
             assert_eq!(cpu.pc - 0x8000, 2);
             assert_eq!(cycles, 2);
 
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
         }
     }
 
@@ -424,8 +444,8 @@ mod tests {
             assert_eq!(cpu.pc - 0x8000, 2);
             assert_eq!(cycles, 3);
 
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
         }
     }
 
@@ -443,8 +463,8 @@ mod tests {
             assert_eq!(cpu.pc - 0x8000, 2);
             assert_eq!(cycles, 4);
 
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
         }
     }
 
@@ -461,8 +481,8 @@ mod tests {
             assert_eq!(cpu.pc - 0x8000, 3);
             assert_eq!(cycles, 4);
 
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
         }
     }
 
@@ -490,8 +510,8 @@ mod tests {
                 assert_eq!(cycles, 4);
             }
 
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
         }
     }
     #[test]
@@ -518,8 +538,8 @@ mod tests {
                 assert_eq!(cycles, 4);
             }
 
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
         }
     }
 
@@ -543,8 +563,8 @@ mod tests {
             assert_eq!(cpu.pc - 0x8000, 2);
             assert_eq!(cycles, 6);
 
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
         }
     }
 
@@ -570,8 +590,8 @@ mod tests {
             assert_eq!(cpu.pc - 0x8000, 2);
             assert_eq!(cycles, if page_crossed { 6 } else { 5 });
 
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
         }
     }
 
@@ -686,8 +706,8 @@ mod tests {
             assert_eq!(cpu.pc - 0x8000, 2);
             assert_eq!(cycles, 2);
 
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
         }
     }
 
@@ -704,8 +724,8 @@ mod tests {
             assert_eq!(cpu.pc - 0x8000, 2);
             assert_eq!(cycles, 3);
 
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
         }
     }
 
@@ -723,8 +743,8 @@ mod tests {
             assert_eq!(cpu.pc - 0x8000, 2);
             assert_eq!(cycles, 4);
 
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
         }
     }
 
@@ -741,8 +761,8 @@ mod tests {
             assert_eq!(cpu.pc - 0x8000, 3);
             assert_eq!(cycles, 4);
 
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
         }
     }
 
@@ -770,8 +790,8 @@ mod tests {
                 assert_eq!(cycles, 4);
             }
 
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
         }
     }
 
@@ -877,8 +897,8 @@ mod tests {
             assert_eq!(cpu.pc - 0x8000, 2);
             assert_eq!(cycles, 2);
 
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
         }
     }
 
@@ -895,8 +915,8 @@ mod tests {
             assert_eq!(cpu.pc - 0x8000, 2);
             assert_eq!(cycles, 3);
 
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
         }
     }
 
@@ -914,8 +934,8 @@ mod tests {
             assert_eq!(cpu.pc - 0x8000, 2);
             assert_eq!(cycles, 4);
 
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
         }
     }
 
@@ -932,8 +952,8 @@ mod tests {
             assert_eq!(cpu.pc - 0x8000, 3);
             assert_eq!(cycles, 4);
 
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
         }
     }
 
@@ -961,8 +981,8 @@ mod tests {
                 assert_eq!(cycles, 4);
             }
 
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
         }
     }
 
@@ -975,8 +995,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, cpu.x);
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
             assert_eq!(cycles, 2);
             assert_eq!(cpu.pc - 0x8000, 1);
         }
@@ -991,8 +1011,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.x, cpu.a);
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
             assert_eq!(cycles, 2);
             assert_eq!(cpu.pc - 0x8000, 1);
         }
@@ -1007,8 +1027,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, cpu.y);
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
             assert_eq!(cycles, 2);
             assert_eq!(cpu.pc - 0x8000, 1);
         }
@@ -1023,8 +1043,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.y, cpu.a);
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
             assert_eq!(cycles, 2);
             assert_eq!(cpu.pc - 0x8000, 1);
         }
@@ -1039,8 +1059,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(val, cpu.x);
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
             assert_eq!(cycles, 2);
             assert_eq!(cpu.pc - 0x8000, 1);
         }
@@ -1087,8 +1107,8 @@ mod tests {
 
             assert_eq!(cpu.a, bus.read8(0x1ff));
             assert_eq!(cpu.s, 0xff);
-            assert_eq!(cpu.get_flag(FLAG_N), (val as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), val == 0);
+            assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), val == 0);
             assert_eq!(cycles, 4);
             assert_eq!(cpu.pc - 0x8000, 1);
         }
@@ -1168,8 +1188,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.x, val.wrapping_sub(1));
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.x as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.x == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.x as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.x == 0);
             assert_eq!(cycles, 2);
             assert_eq!(cpu.pc - 0x8000, 1);
         }
@@ -1184,8 +1204,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.x, val.wrapping_add(1));
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.x as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.x == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.x as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.x == 0);
             assert_eq!(cycles, 2);
             assert_eq!(cpu.pc - 0x8000, 1);
         }
@@ -1200,8 +1220,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 | val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 2);
             assert_eq!(cpu.pc - 0x8000, 2);
         }
@@ -1217,8 +1237,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 | val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 3);
             assert_eq!(cpu.pc - 0x8000, 2);
         }
@@ -1237,8 +1257,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 | !val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 4);
             assert_eq!(cpu.pc - 0x8000, 2);
         }
@@ -1256,8 +1276,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 | !val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 4);
             assert_eq!(cpu.pc - 0x8000, 3);
         }
@@ -1283,8 +1303,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 | !val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, if page_crossed { 5 } else { 4 });
             assert_eq!(cpu.pc - 0x8000, 3);
         }
@@ -1310,8 +1330,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 | !val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, if page_crossed { 5 } else { 4 });
             assert_eq!(cpu.pc - 0x8000, 3);
         }
@@ -1340,8 +1360,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 | !val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 6);
             assert_eq!(cpu.pc - 0x8000, 2);
         }
@@ -1371,8 +1391,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 | !val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, if page_crossed { 6 } else { 5 });
             assert_eq!(cpu.pc - 0x8000, 2);
         }
@@ -1387,8 +1407,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 & val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 2);
             assert_eq!(cpu.pc - 0x8000, 2);
         }
@@ -1404,8 +1424,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 & val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 3);
             assert_eq!(cpu.pc - 0x8000, 2);
         }
@@ -1424,8 +1444,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 & !val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 4);
             assert_eq!(cpu.pc - 0x8000, 2);
         }
@@ -1443,8 +1463,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 & !val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 4);
             assert_eq!(cpu.pc - 0x8000, 3);
         }
@@ -1470,8 +1490,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 & !val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, if page_crossed { 5 } else { 4 });
             assert_eq!(cpu.pc - 0x8000, 3);
         }
@@ -1497,8 +1517,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 & !val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, if page_crossed { 5 } else { 4 });
             assert_eq!(cpu.pc - 0x8000, 3);
         }
@@ -1527,8 +1547,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 & !val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 6);
             assert_eq!(cpu.pc - 0x8000, 2);
         }
@@ -1558,8 +1578,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 & !val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, if page_crossed { 6 } else { 5 });
             assert_eq!(cpu.pc - 0x8000, 2);
         }
@@ -1574,8 +1594,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 ^ val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 2);
             assert_eq!(cpu.pc - 0x8000, 2);
         }
@@ -1591,8 +1611,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 ^ val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 3);
             assert_eq!(cpu.pc - 0x8000, 2);
         }
@@ -1611,8 +1631,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 ^ !val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 4);
             assert_eq!(cpu.pc - 0x8000, 2);
         }
@@ -1630,8 +1650,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 ^ !val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 4);
             assert_eq!(cpu.pc - 0x8000, 3);
         }
@@ -1657,8 +1677,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 ^ !val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, if page_crossed { 5 } else { 4 });
             assert_eq!(cpu.pc - 0x8000, 3);
         }
@@ -1684,8 +1704,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 ^ !val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, if page_crossed { 5 } else { 4 });
             assert_eq!(cpu.pc - 0x8000, 3);
         }
@@ -1714,8 +1734,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 ^ !val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 6);
             assert_eq!(cpu.pc - 0x8000, 2);
         }
@@ -1745,8 +1765,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a, 0b1010_0101 ^ !val);
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, if page_crossed { 6 } else { 5 });
             assert_eq!(cpu.pc - 0x8000, 2);
         }
@@ -1763,8 +1783,8 @@ mod tests {
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a,org_a.wrapping_add(val));
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 2);
             assert_eq!(cpu.pc - 0x8000, 2);
         }
@@ -1778,12 +1798,12 @@ mod tests {
             let org_a = 0x0f;
 
             cpu.a = org_a;
-            cpu.set_flag(FLAG_C, true);
+            cpu.set_flag(flags::C, true);
             let cycles = cpu.step(&mut bus);
 
             assert_eq!(cpu.a,org_a.wrapping_add(val).wrapping_add(1));
-            assert_eq!(cpu.get_flag(FLAG_N), (cpu.a as i8) < 0);
-            assert_eq!(cpu.get_flag(FLAG_Z), cpu.a == 0);
+            assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
+            assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 2);
             assert_eq!(cpu.pc - 0x8000, 2);
         }
@@ -1799,11 +1819,37 @@ mod tests {
         let cycles = cpu.step(&mut bus);
 
         assert_eq!(cpu.a, 0xff);
-        assert_eq!(cpu.get_flag(FLAG_N), true);
-        assert_eq!(cpu.get_flag(FLAG_Z), false);
-        assert_eq!(cpu.get_flag(FLAG_C), false);
+        assert_eq!(cpu.get_flag(flags::N), true);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::C), false);
         assert_eq!(cycles, 2);
         assert_eq!(cpu.pc - 0x8000, 2);
+    }
+
+    #[test]
+    fn test_adc_carry_1_and_neg1() {
+        let mut bus = Bus::new(0x8000, vec![ADC_IMM, 1]);
+        let mut cpu = Cpu::new();
+        let org_a = 0x0f;
+
+        cpu.a = -1 as i8 as u8;;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, 0);
+        assert_eq!(cpu.get_flag(flags::C), true);
+    }
+
+    #[test]
+    fn test_adc_carry_neg128_and_neg1() {
+        let mut bus = Bus::new(0x8000, vec![ADC_IMM, 1]);
+        let mut cpu = Cpu::new();
+        let org_a = 0x0f;
+
+        cpu.a = -1 as i8 as u8;;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, 0);
+        assert_eq!(cpu.get_flag(flags::C), true);
     }
 
     #[test]
@@ -1816,9 +1862,9 @@ mod tests {
         let cycles = cpu.step(&mut bus);
 
         assert_eq!(cpu.a, 0x01);
-        assert_eq!(cpu.get_flag(FLAG_N), false);
-        assert_eq!(cpu.get_flag(FLAG_Z), false);
-        assert_eq!(cpu.get_flag(FLAG_C), true);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::C), true);
         assert_eq!(cycles, 2);
         assert_eq!(cpu.pc - 0x8000, 2);
     }
@@ -1830,14 +1876,162 @@ mod tests {
         let org_a = 0xf0;
 
         cpu.a = org_a;
-        cpu.set_flag(FLAG_C, true);
+        cpu.set_flag(flags::C, true);
         let cycles = cpu.step(&mut bus);
 
         assert_eq!(cpu.a, 0x00);
-        assert_eq!(cpu.get_flag(FLAG_N), false);
-        assert_eq!(cpu.get_flag(FLAG_Z), true);
-        assert_eq!(cpu.get_flag(FLAG_C), true);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cpu.get_flag(flags::Z), true);
+        assert_eq!(cpu.get_flag(flags::C), true);
         assert_eq!(cycles, 2);
         assert_eq!(cpu.pc - 0x8000, 2);
+    }
+
+    #[test]
+    fn test_adc_overflow_none_positive() {
+        let mut bus = Bus::new(0x8000, vec![ADC_IMM, 0x05]);
+        let mut cpu = Cpu::new();
+        let org_a = 0x0f;
+
+        cpu.a = org_a;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, 0x14);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::C), false);
+        assert_eq!(cpu.get_flag(flags::V), false);
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.pc - 0x8000, 2);
+    }
+
+    #[test]
+    fn test_adc_overflow_none_negative() {
+        let mut bus = Bus::new(0x8000, vec![ADC_IMM,((-2 as i8) as u8) ]);
+        let mut cpu = Cpu::new();
+        let org_a = (-5 as i8) as u8;
+
+        cpu.a = org_a;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, (-7 as i8) as u8);
+        assert_eq!(cpu.get_flag(flags::N), true);
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::C), true);
+        assert_eq!(cpu.get_flag(flags::V), false);
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.pc - 0x8000, 2);
+    }
+
+    #[test]
+    fn test_adc_overflow_none_1_and_1() {
+        let mut bus = Bus::new(0x8000, vec![ADC_IMM, 1]);
+        let mut cpu = Cpu::new();
+
+        cpu.a = 1;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, 2);
+        assert_eq!(cpu.get_flag(flags::V), false);
+    }
+
+    #[test]
+    fn test_adc_overflow_none_1_and_neg1() {
+        let mut bus = Bus::new(0x8000, vec![ADC_IMM, 1]);
+        let mut cpu = Cpu::new();
+
+        cpu.a = -1 as i8 as u8;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, 0);
+        assert_eq!(cpu.get_flag(flags::V), false);
+    }
+
+    #[test]
+    fn test_adc_overflows_127_and_1() {
+        let mut bus = Bus::new(0x8000, vec![ADC_IMM, 127]);
+        let mut cpu = Cpu::new();
+
+        cpu.a = 1;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, 128);
+        assert_eq!(cpu.get_flag(flags::V), true);
+    }
+
+    #[test]
+    fn test_adc_overflows_neg128_and_neg1() {
+        let mut bus = Bus::new(0x8000, vec![ADC_IMM, -128 as i8 as u8]);
+        let mut cpu = Cpu::new();
+
+        cpu.a = -1 as i8 as u8;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, -129 as i16 as u8);
+        assert_eq!(cpu.get_flag(flags::V), true);
+    }
+
+    #[test]
+    fn test_adc_overflows_63_and_64_and_carry_in() {
+        let mut bus = Bus::new(0x8000, vec![ADC_IMM, 63]);
+        let mut cpu = Cpu::new();
+
+        cpu.a = 64;
+        cpu.set_flag(flags::C, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, 128);
+        assert_eq!(cpu.get_flag(flags::V), true);
+    }
+
+    #[test]
+    fn test_sbc_0_less_1_not_overflows() {
+        let mut bus = Bus::new(0x8000, vec![SBC_IMM, 1]);
+        let mut cpu = Cpu::new();
+
+        cpu.a = 0;
+        cpu.set_flag(flags::C, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, -1 as i8 as u8);
+        assert_eq!(cpu.get_flag(flags::V), false);
+    }
+
+    #[test]
+    fn test_sbc_neg128_less_1_overflows() {
+        let mut bus = Bus::new(0x8000, vec![SBC_IMM, 1]);
+        let mut cpu = Cpu::new();
+
+        cpu.a = -128 as i16 as u8;
+        cpu.set_flag(flags::C, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, -129 as i16 as u8);
+        assert_eq!(cpu.get_flag(flags::V), true);
+    }
+
+    #[test]
+    fn test_sbc_127_less_neg1_overflows() {
+        let mut bus = Bus::new(0x8000, vec![SBC_IMM, -1 as i8 as u8]);
+        let mut cpu = Cpu::new();
+
+        cpu.a = 127;
+        cpu.set_flag(flags::C, true);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, 128 );
+        assert_eq!(cpu.get_flag(flags::V), true);
+    }
+
+    #[test]
+    fn test_sbc_neg64_less_64_less_1() {
+        let mut bus = Bus::new(0x8000, vec![SBC_IMM, 0x40]);
+        let mut cpu = Cpu::new();
+
+        cpu.a = 0xc0;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, -129 as i16 as u8 );
+        assert_eq!(cpu.get_flag(flags::V), true);
     }
 }
