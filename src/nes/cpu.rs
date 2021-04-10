@@ -112,7 +112,7 @@ impl Cpu {
             RTS_IMP => self.rts(op, bus),
             JMP_ABS => self.jmp(op, bus),
             JMP_IND => self.jmp(op, bus),
-            BIT_ZP | BIT_ABS  => self.bit(op, bus),
+            BIT_ZP | BIT_ABS => self.bit(op, bus),
             CLC_IMP => self.flag(op, flags::C, false),
             SEC_IMP => self.flag(op, flags::C, true),
             CLD_IMP => self.flag(op, flags::D, false),
@@ -120,6 +120,7 @@ impl Cpu {
             CLI_IMP => self.flag(op, flags::I, false),
             SEI_IMP => self.flag(op, flags::I, true),
             CLV_IMP => self.flag(op, flags::V, false),
+            NOP_IMP => self.nop(op),
             // Panic
             o => panic!("unknown opcode: {:X}", o),
         }
@@ -193,7 +194,6 @@ impl Cpu {
             AddressMode::Relative => {
                 let addr = bus.read8(self.pc) as i8;
                 self.pc += 1;
- 
                 let target = self.pc.wrapping_add(addr as u16);
 
                 Address(target, target & 0xFF00 != self.pc & 0xFF00)
@@ -206,10 +206,8 @@ impl Cpu {
 
                 let ind = u16::from_le_bytes([lo, hi]);
                 let nlo = bus.read8(ind);
-                
                 let bugged_ind = u16::from_le_bytes([lo.wrapping_add(1), hi]);
                 let nhi = bus.read8(bugged_ind);
-               
                 let target = u16::from_le_bytes([nlo, nhi]);
 
                 Address(target, false)
@@ -667,17 +665,18 @@ impl Cpu {
         let m = bus.read8(addr);
 
         let res = self.a & m;
-        
         self.set_flag(flags::Z, res == 0);
         self.set_flag(flags::N, m & flags::N != 0);
         self.set_flag(flags::V, m & flags::V != 0);
 
         inst.cycle_cost
     }
-    fn flag(&mut self, inst: &Instruction, flag: u8, value: bool) -> u8
-    {
+    fn flag(&mut self, inst: &Instruction, flag: u8, value: bool) -> u8 {
         self.set_flag(flag, value);
 
+        inst.cycle_cost
+    }
+    fn nop(&mut self, inst: &Instruction) -> u8 {
         inst.cycle_cost
     }
 }
@@ -3068,7 +3067,10 @@ mod tests {
         cpu.status = start_flags;
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0100 + cpu.s.wrapping_add(1) as u16), start_flags);
+        assert_eq!(
+            bus.read8(0x0100 + cpu.s.wrapping_add(1) as u16),
+            start_flags
+        );
         assert_eq!(bus.read8(0x0100 + cpu.s.wrapping_add(2) as u16), 0x24);
         assert_eq!(bus.read8(0x0100 + cpu.s.wrapping_add(3) as u16), 0x81);
         assert_eq!(cpu.pc, 0x1234);
@@ -3113,10 +3115,8 @@ mod tests {
         assert_eq!(bus.read8(0x0100 + cpu.s.wrapping_add(1) as u16), 0x24);
         assert_eq!(bus.read8(0x0100 + cpu.s.wrapping_add(2) as u16), 0x81);
         assert_eq!(cycles_jsr, 6);
-        
 
         let cycles_rts = cpu.step(&mut bus);
-        
         assert_eq!(cpu.pc, 0x8125);
         assert_eq!(cpu.s, 0xFF);
         assert_eq!(cycles_rts, 6);
@@ -3132,7 +3132,7 @@ mod tests {
 
         assert_eq!(cpu.pc, 0x8321);
         assert_eq!(cycles, 3);
-    } 
+    }
 
     #[test]
     fn test_jmp_indirect() {
@@ -3146,7 +3146,7 @@ mod tests {
 
         assert_eq!(cpu.pc, 0x5544);
         assert_eq!(cycles, 5);
-    } 
+    }
 
     #[test]
     fn test_jmp_indirect_bug() {
@@ -3160,7 +3160,7 @@ mod tests {
 
         assert_eq!(cpu.pc, 0x5544);
         assert_eq!(cycles, 5);
-    } 
+    }
 
     #[test]
     fn test_bit_1() {
@@ -3178,7 +3178,7 @@ mod tests {
         assert_eq!(cpu.get_flag(flags::V), false);
         assert_eq!(cpu.a, a);
         assert_eq!(cycles, 4);
-    } 
+    }
 
     #[test]
     fn test_bit_2() {
@@ -3196,7 +3196,7 @@ mod tests {
         assert_eq!(cpu.get_flag(flags::V), false);
         assert_eq!(cpu.a, a);
         assert_eq!(cycles, 4);
-    } 
+    }
     #[test]
     fn test_bit_3() {
         let mut bus = Bus::new(0x8000, vec![BIT_ABS, 0x0F, 0x83]);
@@ -3213,7 +3213,7 @@ mod tests {
         assert_eq!(cpu.get_flag(flags::V), true);
         assert_eq!(cpu.a, a);
         assert_eq!(cycles, 4);
-    } 
+    }
 
     #[test]
     fn test_bit_4() {
@@ -3231,11 +3231,16 @@ mod tests {
         assert_eq!(cpu.get_flag(flags::V), false);
         assert_eq!(cpu.a, a);
         assert_eq!(cycles, 4);
-    } 
+    }
 
     #[test]
     fn test_flags() {
-        let mut bus = Bus::new(0x8000, vec![SEC_IMP, CLC_IMP, SED_IMP, CLD_IMP, SEI_IMP, CLI_IMP, CLV_IMP]);
+        let mut bus = Bus::new(
+            0x8000,
+            vec![
+                SEC_IMP, CLC_IMP, SED_IMP, CLD_IMP, SEI_IMP, CLI_IMP, CLV_IMP,
+            ],
+        );
 
         let mut cpu = Cpu::new();
 
@@ -3247,7 +3252,6 @@ mod tests {
         let mut cycles = cpu.step(&mut bus);
         assert_eq!(cpu.get_flag(flags::C), false);
         assert_eq!(cycles, 2);
-
 
         assert_eq!(cpu.get_flag(flags::D), false);
         let mut cycles = cpu.step(&mut bus);
@@ -3272,5 +3276,17 @@ mod tests {
         let mut cycles = cpu.step(&mut bus);
         assert_eq!(cpu.get_flag(flags::V), false);
         assert_eq!(cycles, 2);
-    } 
+    }
+
+    #[test]
+    fn test_nop() {
+        let mut bus = Bus::new(0x8000, vec![NOP_IMP]);
+
+        let mut cpu = Cpu::new();
+        cpu.pc = 0x8000;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8001);
+        assert_eq!(cycles, 2);
+    }
 }

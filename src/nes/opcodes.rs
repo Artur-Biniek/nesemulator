@@ -182,7 +182,8 @@ pub const CLI_IMP: u8 = 0x58;
 pub const SEI_IMP: u8 = 0x78;
 pub const CLV_IMP: u8 = 0xB8;
 
-pub const NOP_IMM: u8 = 0xEA;
+pub const NOP_IMP: u8 = 0xEA;
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum AddressMode {
     None,
