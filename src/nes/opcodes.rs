@@ -171,6 +171,8 @@ pub const RTS_IMP: u8 = 0x60;
 pub const JMP_ABS: u8 = 0x4C;
 pub const JMP_IND: u8 = 0x6C;
 
+pub const BIT_ZP: u8 = 0x24;
+pub const BIT_ABS: u8 = 0x2C;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum AddressMode {

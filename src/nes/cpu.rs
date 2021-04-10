@@ -112,6 +112,7 @@ impl Cpu {
             RTS_IMP => self.rts(op, bus),
             JMP_ABS => self.jmp(op, bus),
             JMP_IND => self.jmp(op, bus),
+            BIT_ZP | BIT_ABS  => self.bit(op, bus),
             // Panic
             o => panic!("unknown opcode: {:X}", o),
         }
@@ -648,6 +649,21 @@ impl Cpu {
         let Address(pc_next, _) = self.get_address(&inst.addressing_mode, bus);
 
         self.pc = pc_next;
+
+        inst.cycle_cost
+    }
+    fn bit<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
+    where
+        T: Memory,
+    {
+        let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
+        let m = bus.read8(addr);
+
+        let res = self.a & m;
+        
+        self.set_flag(flags::Z, res == 0);
+        self.set_flag(flags::N, m & flags::N != 0);
+        self.set_flag(flags::V, m & flags::V != 0);
 
         inst.cycle_cost
     }
@@ -3131,5 +3147,76 @@ mod tests {
 
         assert_eq!(cpu.pc, 0x5544);
         assert_eq!(cycles, 5);
+    } 
+
+    #[test]
+    fn test_bit_1() {
+        let mut bus = Bus::new(0x8000, vec![BIT_ABS, 0x0F, 0x83]);
+        bus.write8(0x830F, 0b0000_0000);
+
+        let a = 0b0000_0000;
+        let mut cpu = Cpu::new();
+        cpu.pc = 0x8000;
+        cpu.a = a;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.get_flag(flags::Z), true);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cpu.get_flag(flags::V), false);
+        assert_eq!(cpu.a, a);
+        assert_eq!(cycles, 4);
+    } 
+
+    #[test]
+    fn test_bit_2() {
+        let mut bus = Bus::new(0x8000, vec![BIT_ABS, 0x0F, 0x83]);
+        bus.write8(0x830F, 0b1000_0000);
+
+        let a = 0b0000_0000;
+        let mut cpu = Cpu::new();
+        cpu.pc = 0x8000;
+        cpu.a = a;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.get_flag(flags::Z), true);
+        assert_eq!(cpu.get_flag(flags::N), true);
+        assert_eq!(cpu.get_flag(flags::V), false);
+        assert_eq!(cpu.a, a);
+        assert_eq!(cycles, 4);
+    } 
+    #[test]
+    fn test_bit_3() {
+        let mut bus = Bus::new(0x8000, vec![BIT_ABS, 0x0F, 0x83]);
+        bus.write8(0x830F, 0b0100_0000);
+
+        let a = 0b0000_0000;
+        let mut cpu = Cpu::new();
+        cpu.pc = 0x8000;
+        cpu.a = a;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.get_flag(flags::Z), true);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cpu.get_flag(flags::V), true);
+        assert_eq!(cpu.a, a);
+        assert_eq!(cycles, 4);
+    } 
+
+    #[test]
+    fn test_bit_4() {
+        let mut bus = Bus::new(0x8000, vec![BIT_ABS, 0x0F, 0x83]);
+        bus.write8(0x830F, 0b0010_0100);
+
+        let a = 0b0000_0101;
+        let mut cpu = Cpu::new();
+        cpu.pc = 0x8000;
+        cpu.a = a;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.get_flag(flags::Z), false);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cpu.get_flag(flags::V), false);
+        assert_eq!(cpu.a, a);
+        assert_eq!(cycles, 4);
     } 
 }
