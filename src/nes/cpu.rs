@@ -113,6 +113,13 @@ impl Cpu {
             JMP_ABS => self.jmp(op, bus),
             JMP_IND => self.jmp(op, bus),
             BIT_ZP | BIT_ABS  => self.bit(op, bus),
+            CLC_IMP => self.flag(op, flags::C, false),
+            SEC_IMP => self.flag(op, flags::C, true),
+            CLD_IMP => self.flag(op, flags::D, false),
+            SED_IMP => self.flag(op, flags::D, true),
+            CLI_IMP => self.flag(op, flags::I, false),
+            SEI_IMP => self.flag(op, flags::I, true),
+            CLV_IMP => self.flag(op, flags::V, false),
             // Panic
             o => panic!("unknown opcode: {:X}", o),
         }
@@ -664,6 +671,12 @@ impl Cpu {
         self.set_flag(flags::Z, res == 0);
         self.set_flag(flags::N, m & flags::N != 0);
         self.set_flag(flags::V, m & flags::V != 0);
+
+        inst.cycle_cost
+    }
+    fn flag(&mut self, inst: &Instruction, flag: u8, value: bool) -> u8
+    {
+        self.set_flag(flag, value);
 
         inst.cycle_cost
     }
@@ -3218,5 +3231,46 @@ mod tests {
         assert_eq!(cpu.get_flag(flags::V), false);
         assert_eq!(cpu.a, a);
         assert_eq!(cycles, 4);
+    } 
+
+    #[test]
+    fn test_flags() {
+        let mut bus = Bus::new(0x8000, vec![SEC_IMP, CLC_IMP, SED_IMP, CLD_IMP, SEI_IMP, CLI_IMP, CLV_IMP]);
+
+        let mut cpu = Cpu::new();
+
+        assert_eq!(cpu.get_flag(flags::C), false);
+        let mut cycles = cpu.step(&mut bus);
+        assert_eq!(cpu.get_flag(flags::C), true);
+        assert_eq!(cycles, 2);
+
+        let mut cycles = cpu.step(&mut bus);
+        assert_eq!(cpu.get_flag(flags::C), false);
+        assert_eq!(cycles, 2);
+
+
+        assert_eq!(cpu.get_flag(flags::D), false);
+        let mut cycles = cpu.step(&mut bus);
+        assert_eq!(cpu.get_flag(flags::D), true);
+        assert_eq!(cycles, 2);
+
+        let mut cycles = cpu.step(&mut bus);
+        assert_eq!(cpu.get_flag(flags::D), false);
+        assert_eq!(cycles, 2);
+
+        assert_eq!(cpu.get_flag(flags::I), false);
+        let mut cycles = cpu.step(&mut bus);
+        assert_eq!(cpu.get_flag(flags::I), true);
+        assert_eq!(cycles, 2);
+
+        let mut cycles = cpu.step(&mut bus);
+        assert_eq!(cpu.get_flag(flags::I), false);
+        assert_eq!(cycles, 2);
+
+        assert_eq!(cpu.get_flag(flags::V), false);
+        cpu.set_flag(flags::V, true);
+        let mut cycles = cpu.step(&mut bus);
+        assert_eq!(cpu.get_flag(flags::V), false);
+        assert_eq!(cycles, 2);
     } 
 }

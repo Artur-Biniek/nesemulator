@@ -174,6 +174,15 @@ pub const JMP_IND: u8 = 0x6C;
 pub const BIT_ZP: u8 = 0x24;
 pub const BIT_ABS: u8 = 0x2C;
 
+pub const CLC_IMP: u8 = 0x18;
+pub const SEC_IMP: u8 = 0x38;
+pub const CLD_IMP: u8 = 0xD8;
+pub const SED_IMP: u8 = 0xF8;
+pub const CLI_IMP: u8 = 0x58;
+pub const SEI_IMP: u8 = 0x78;
+pub const CLV_IMP: u8 = 0xB8;
+
+pub const NOP_IMM: u8 = 0xEA;
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum AddressMode {
     None,
