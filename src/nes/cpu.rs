@@ -2146,10 +2146,9 @@ mod tests {
     fn test_adc_carry_1_and_neg1() {
         let mut bus = Bus::new(0x8000, vec![ADC_IMM, 1]);
         let mut cpu = Cpu::new();
-        let org_a = 0x0f;
 
         cpu.a = -1 as i8 as u8;
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.a, 0);
         assert_eq!(cpu.get_flag(flags::C), true);
@@ -2159,10 +2158,9 @@ mod tests {
     fn test_adc_carry_neg128_and_neg1() {
         let mut bus = Bus::new(0x8000, vec![ADC_IMM, 1]);
         let mut cpu = Cpu::new();
-        let org_a = 0x0f;
 
         cpu.a = -1 as i8 as u8;
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.a, 0);
         assert_eq!(cpu.get_flag(flags::C), true);
@@ -2245,7 +2243,7 @@ mod tests {
         let mut cpu = Cpu::new();
 
         cpu.a = 1;
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.a, 2);
         assert_eq!(cpu.get_flag(flags::V), false);
@@ -2257,7 +2255,7 @@ mod tests {
         let mut cpu = Cpu::new();
 
         cpu.a = -1 as i8 as u8;
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.a, 0);
         assert_eq!(cpu.get_flag(flags::V), false);
@@ -2269,7 +2267,7 @@ mod tests {
         let mut cpu = Cpu::new();
 
         cpu.a = 1;
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.a, 128);
         assert_eq!(cpu.get_flag(flags::V), true);
@@ -2281,7 +2279,7 @@ mod tests {
         let mut cpu = Cpu::new();
 
         cpu.a = -1 as i8 as u8;
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.a, -129 as i16 as u8);
         assert_eq!(cpu.get_flag(flags::V), true);
@@ -2294,7 +2292,7 @@ mod tests {
 
         cpu.a = 64;
         cpu.set_flag(flags::C, true);
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.a, 128);
         assert_eq!(cpu.get_flag(flags::V), true);
@@ -2307,7 +2305,7 @@ mod tests {
 
         cpu.a = 0;
         cpu.set_flag(flags::C, true);
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.a, -1 as i8 as u8);
         assert_eq!(cpu.get_flag(flags::V), false);
@@ -2320,7 +2318,7 @@ mod tests {
 
         cpu.a = -128 as i16 as u8;
         cpu.set_flag(flags::C, true);
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.a, -129 as i16 as u8);
         assert_eq!(cpu.get_flag(flags::V), true);
@@ -2333,7 +2331,7 @@ mod tests {
 
         cpu.a = 127;
         cpu.set_flag(flags::C, true);
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.a, 128);
         assert_eq!(cpu.get_flag(flags::V), true);
@@ -2345,7 +2343,7 @@ mod tests {
         let mut cpu = Cpu::new();
 
         cpu.a = 0xc0;
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.a, -129 as i16 as u8);
         assert_eq!(cpu.get_flag(flags::V), true);
@@ -2357,7 +2355,7 @@ mod tests {
         let mut cpu = Cpu::new();
 
         cpu.a = 0x01;
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.a, 0x01);
         assert_eq!(cpu.get_flag(flags::N), true);
@@ -2371,7 +2369,7 @@ mod tests {
         let mut cpu = Cpu::new();
 
         cpu.a = 0x02;
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.a, 0x02);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2385,7 +2383,7 @@ mod tests {
         let mut cpu = Cpu::new();
 
         cpu.a = 0xF2;
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.a, 0xF2);
         assert_eq!(cpu.get_flag(flags::N), true);
@@ -2399,7 +2397,7 @@ mod tests {
         let mut cpu = Cpu::new();
 
         cpu.x = 0x01;
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.x, 0x01);
         assert_eq!(cpu.get_flag(flags::N), true);
@@ -2413,7 +2411,7 @@ mod tests {
         let mut cpu = Cpu::new();
 
         cpu.x = 0x02;
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.x, 0x02);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2427,7 +2425,7 @@ mod tests {
         let mut cpu = Cpu::new();
 
         cpu.x = 0xF2;
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.x, 0xF2);
         assert_eq!(cpu.get_flag(flags::N), true);
@@ -2441,7 +2439,7 @@ mod tests {
         let mut cpu = Cpu::new();
 
         cpu.x = 0x01;
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.x, 0x01);
         assert_eq!(cpu.get_flag(flags::N), true);
@@ -2455,7 +2453,7 @@ mod tests {
         let mut cpu = Cpu::new();
 
         cpu.y = 0x02;
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.y, 0x02);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2469,7 +2467,7 @@ mod tests {
         let mut cpu = Cpu::new();
 
         cpu.y = 0xF2;
-        let cycles = cpu.step(&mut bus);
+        cpu.step(&mut bus);
 
         assert_eq!(cpu.y, 0xF2);
         assert_eq!(cpu.get_flag(flags::N), true);
@@ -3249,31 +3247,31 @@ mod tests {
         assert_eq!(cpu.get_flag(flags::C), true);
         assert_eq!(cycles, 2);
 
-        let mut cycles = cpu.step(&mut bus);
+        cycles = cpu.step(&mut bus);
         assert_eq!(cpu.get_flag(flags::C), false);
         assert_eq!(cycles, 2);
 
         assert_eq!(cpu.get_flag(flags::D), false);
-        let mut cycles = cpu.step(&mut bus);
+        cycles = cpu.step(&mut bus);
         assert_eq!(cpu.get_flag(flags::D), true);
         assert_eq!(cycles, 2);
 
-        let mut cycles = cpu.step(&mut bus);
+        cycles = cpu.step(&mut bus);
         assert_eq!(cpu.get_flag(flags::D), false);
         assert_eq!(cycles, 2);
 
         assert_eq!(cpu.get_flag(flags::I), false);
-        let mut cycles = cpu.step(&mut bus);
+        cycles = cpu.step(&mut bus);
         assert_eq!(cpu.get_flag(flags::I), true);
         assert_eq!(cycles, 2);
 
-        let mut cycles = cpu.step(&mut bus);
+        cycles = cpu.step(&mut bus);
         assert_eq!(cpu.get_flag(flags::I), false);
         assert_eq!(cycles, 2);
 
         assert_eq!(cpu.get_flag(flags::V), false);
         cpu.set_flag(flags::V, true);
-        let mut cycles = cpu.step(&mut bus);
+        cycles = cpu.step(&mut bus);
         assert_eq!(cpu.get_flag(flags::V), false);
         assert_eq!(cycles, 2);
     }
