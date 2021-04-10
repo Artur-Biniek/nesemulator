@@ -17,7 +17,11 @@ mod flags {
 
 mod vectors {
     pub const IRQ: u16 = 0xFFFE;
+    pub const RESET: u16 = 0xFFFC;
 }
+
+const STACK_RESET: u8 = 0xFD;
+const FLAGS_RESET: u8 = 0b0010_0100;
 
 pub struct Cpu {
     a: u8,
@@ -35,9 +39,39 @@ impl Cpu {
             x: 0,
             y: 0,
             pc: 0x8000,
-            status: 0,
-            s: 0,
+            status: FLAGS_RESET,
+            s: STACK_RESET,
         };
+    }
+
+    pub fn reset<T>(&mut self, bus: &T)
+    where
+        T: Memory,
+    {
+        self.a = 0;
+        self.x = 0;
+        self.y = 0;
+        self.s = STACK_RESET;
+        self.status = FLAGS_RESET;
+
+        let pc_lo = bus.read8(vectors::RESET);
+        let pc_hi = bus.read8(vectors::RESET.wrapping_add(1));
+
+        self.pc = u16::from_le_bytes([pc_lo, pc_hi]);
+    }
+
+    pub fn dump<T>(&self, bus: &T)
+    where
+        T: Memory,
+    {
+        let ins = get_inst(bus.read8(self.pc));
+        println!(
+            "{:X}: {} {:X} {:X} ",
+            self.pc,
+            ins.mnemonic,
+            bus.read8(self.pc + 1),
+            bus.read8(self.pc + 2)
+        );
     }
 
     pub fn step<T>(&mut self, bus: &mut T) -> u8
@@ -131,6 +165,7 @@ impl Cpu {
         T: Memory,
     {
         match mode {
+            AddressMode::Implied => Address(0, false),
             AddressMode::Immediate => {
                 let addr = self.pc;
                 self.pc += 1;
@@ -152,19 +187,25 @@ impl Cpu {
                 Address(addr, false)
             }
             AddressMode::Absolute => {
-                let addr = bus.read16(self.pc);
+                let lo = bus.read8(self.pc);
+                let hi = bus.read8(self.pc + 1);
+                let addr = u16::from_le_bytes([lo, hi]);
                 self.pc += 2;
                 Address(addr, false)
             }
             AddressMode::AbsoluteX => {
-                let base = bus.read16(self.pc);
+                let lo = bus.read8(self.pc);
+                let hi = bus.read8(self.pc + 1);
+                let base = u16::from_le_bytes([lo, hi]);
                 self.pc += 2;
                 let addr = base.wrapping_add(self.x as u16);
 
                 Address(addr, base & 0xFF00 != addr & 0xFF00)
             }
             AddressMode::AbsoluteY => {
-                let base = bus.read16(self.pc);
+                let lo = bus.read8(self.pc);
+                let hi = bus.read8(self.pc + 1);
+                let base = u16::from_le_bytes([lo, hi]);
                 self.pc += 2;
                 let addr = base.wrapping_add(self.y as u16);
 
@@ -712,12 +753,6 @@ mod tests {
             } else {
                 panic!("Address {:X} empty", addr);
             }
-        }
-        fn read16(&self, addr: u16) -> u16 {
-            let lo = self.read8(addr) as u16;
-            let hi = self.read8(addr + 1) as u16;
-
-            (hi << 8) | lo
         }
     }
 
@@ -3241,6 +3276,7 @@ mod tests {
         );
 
         let mut cpu = Cpu::new();
+        cpu.status = 0;
 
         assert_eq!(cpu.get_flag(flags::C), false);
         let mut cycles = cpu.step(&mut bus);
@@ -3287,4 +3323,35 @@ mod tests {
         assert_eq!(cpu.pc, 0x8001);
         assert_eq!(cycles, 2);
     }
+
+    // #[test]
+    // fn test_prg_1() {
+    //     // C000  4C F5 C5  JMP $C5F5                       A:00 X:00 Y:00 P:24 SP:FD PPU:  0, 21 CYC:7
+    //     // C5F5  A2 00     LDX #$00                        A:00 X:00 Y:00 P:24 SP:FD PPU:  0, 30 CYC:10
+    //     // C5F7  86 00     STX $00 = 00                    A:00 X:00 Y:00 P:26 SP:FD PPU:  0, 36 CYC:12
+    //     // C5F9  86 10     STX $10 = 00                    A:00 X:00 Y:00 P:26 SP:FD PPU:  0, 45 CYC:15
+    //     // C5FB  86 11     STX $11 = 00                    A:00 X:00 Y:00 P:26 SP:FD PPU:  0, 54 CYC:18
+    //     let mut bus = Bus::new(
+    //         0xC000,
+    //         vec![
+    //             0x4C, 0xF5,
+    //             0xC5, // C000  4C F5 C5  JMP $C5F5                       A:00 X:00 Y:00 P:24 SP:FD
+    //             0xA2,
+    //             0x00, // C5F5  A2 00     LDX #$00                        A:00 X:00 Y:00 P:24 SP:FD
+    //             0x86,
+    //             0x00, // C5F7  86 00     STX $00 = 00                    A:00 X:00 Y:00 P:26 SP:FD
+    //             0x86,
+    //             0x10, // C5F9  86 10     STX $10 = 00                    A:00 X:00 Y:00 P:26 SP:FD
+    //             0x86,
+    //             0x11, // C5FB  86 11     STX $11 = 00                    A:00 X:00 Y:00 P:26 SP:FD
+    //         ],
+    //     );
+
+    //     let mut cpu = Cpu::new();
+    //     cpu.pc = 0xC000;
+    //     let cycles = cpu.step(&mut bus);
+
+    //     assert_eq!(cpu.pc, 0x8001);
+    //     assert_eq!(cycles, 2);
+    // }
 }
