@@ -1,6 +1,8 @@
 use super::cartridge::Rom;
 
 pub const RAM_END: u16 = 0x2000 - 1;
+pub const PPU_REGISTERS: u16 = 0x2000;
+pub const PPU_REGISTERS_MIRRORS_END: u16 = 0x3FFF;
 pub const PRG_ROM_START: u16 = 0x8000;
 pub const PRG_ROM_END: u16 = 0xFFFF;
 
@@ -23,7 +25,8 @@ impl Bus {
     }
 
     fn read_prg_rom(&self, address: u16) -> u8 {
-        0
+        let mirror = address & (0x4000 - 1);
+        return self.prg_rom.prg_rom[mirror as usize];
     }
 }
 
@@ -33,6 +36,12 @@ impl Memory for Bus {
             0..=RAM_END => {
                 let mirror_insensitive = addr & 0x07FF;
                 self.ram[mirror_insensitive as usize] = value
+            }
+
+            PPU_REGISTERS..=PPU_REGISTERS_MIRRORS_END => {
+                let _mirror_down_addr = addr & 0b00100000_00000111;
+                // todo!("PPU")
+                ()
             }
 
             _ => panic!("Unsupported write @{:X}={:X}", addr, value),
@@ -45,10 +54,12 @@ impl Memory for Bus {
                 let mirror_insensitive = addr & 0x07FF;
                 self.ram[mirror_insensitive as usize]
             }
-            PRG_ROM_START..=PRG_ROM_END => {
-                let shiftedd_address = addr & 0x7FFF;
-                self.read_prg_rom(shiftedd_address)
+            PPU_REGISTERS..=PPU_REGISTERS_MIRRORS_END => {
+                let _mirror_down_addr = addr & 0b00100000_00000111;
+                //todo!("PPU" );
+                0
             }
+            PRG_ROM_START..=PRG_ROM_END => self.read_prg_rom(addr - 0x8000),
             _ => panic!("Unsupported read from @{:X}", addr),
         }
     }

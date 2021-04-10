@@ -7,8 +7,8 @@ struct Address(u16, bool);
 mod flags {
     pub const N: u8 = 1 << 7;
     pub const V: u8 = 1 << 6;
-    // 1 << 5 unused
-    pub const B: u8 = 1 << 4;
+    pub const B2: u8 = 1 << 5;
+    pub const B1: u8 = 1 << 4;
     pub const D: u8 = 1 << 3;
     pub const I: u8 = 1 << 2;
     pub const Z: u8 = 1 << 1;
@@ -27,7 +27,7 @@ pub struct Cpu {
     a: u8,
     x: u8,
     y: u8,
-    pc: u16,
+    pub pc: u16,
     status: u8,
     s: u8,
 }
@@ -66,11 +66,12 @@ impl Cpu {
     {
         let ins = get_inst(bus.read8(self.pc));
         println!(
-            "{:X}: {} {:X} {:X} ",
+            "{:04X}  {}  {} {:26}  {}",
             self.pc,
+            self.get_memory_dump(&ins, bus),
             ins.mnemonic,
-            bus.read8(self.pc + 1),
-            bus.read8(self.pc + 2)
+            self.get_operand_dump(&ins, bus),
+            self.get_regs_dump(),
         );
     }
 
@@ -144,8 +145,7 @@ impl Cpu {
             RTI_IMP => self.rti(op, bus),
             JSR_ABS => self.jsr(op, bus),
             RTS_IMP => self.rts(op, bus),
-            JMP_ABS => self.jmp(op, bus),
-            JMP_IND => self.jmp(op, bus),
+            JMP_ABS | JMP_IND => self.jmp(op, bus),
             BIT_ZP | BIT_ABS => self.bit(op, bus),
             CLC_IMP => self.flag(op, flags::C, false),
             SEC_IMP => self.flag(op, flags::C, true),
@@ -157,6 +157,165 @@ impl Cpu {
             NOP_IMP => self.nop(op),
             // Panic
             o => panic!("unknown opcode: {:X}", o),
+        }
+    }
+
+    fn get_regs_dump(&self) -> String {
+        format!(
+            "A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}",
+            self.a, self.x, self.y, self.status, self.s
+        )
+    }
+    fn get_instruction_size(ins: &Instruction) -> u8 {
+        match ins.addressing_mode {
+            AddressMode::Implied => 1,
+            AddressMode::Immediate
+            | AddressMode::ZeroPage
+            | AddressMode::ZeroPageX
+            | AddressMode::ZeroPageY => 2,
+            AddressMode::Absolute
+            | AddressMode::AbsoluteX
+            | AddressMode::AbsoluteY
+            | AddressMode::Indirect => 3,
+            AddressMode::IndirectZeroX | AddressMode::IndirectZeroY | AddressMode::Relative => 2,
+            _ => panic!("Unsupported addresing mode"),
+        }
+    }
+
+    fn get_memory_dump<T>(&self, ins: &Instruction, bus: &T) -> String
+    where
+        T: Memory,
+    {
+        let size = Cpu::get_instruction_size(ins);
+        let a = if size > 0 {
+            format!("{:02X}", bus.read8(self.pc))
+        } else {
+            format!("  ")
+        };
+        let b = if size > 1 {
+            format!("{:02X}", bus.read8(self.pc + 1))
+        } else {
+            format!("  ")
+        };
+        let c = if size > 2 {
+            format!("{:02X}", bus.read8(self.pc + 2))
+        } else {
+            format!("  ")
+        };
+
+        format!("{} {} {}", a, b, c)
+    }
+
+    fn get_operand_dump<T>(&self, ins: &Instruction, bus: &T) -> String
+    where
+        T: Memory,
+    {
+        let mode = ins.addressing_mode;
+        match mode {
+            AddressMode::Implied => match ins.opcode {
+                0x0a | 0x4a | 0x2a | 0x6a => format!("A "),
+                _ => String::from(""),
+            },
+            AddressMode::Immediate => {
+                let addr = self.pc + 1;
+                format!("#${:02X}", bus.read8(addr))
+            }
+            AddressMode::ZeroPage => {
+                let addr = bus.read8(self.pc + 1) as u16;
+                let value = bus.read8(addr);
+
+                format!("${:02X} = {:02X} ", addr, value)
+            }
+            AddressMode::ZeroPageX => {
+                let base = bus.read8(self.pc + 1);
+                let addr = base.wrapping_add(self.x) as u16;
+                let val = bus.read8(addr);
+
+                format!("${:02X},X @ {:02X} = {:02X}", base, addr, val)
+            }
+            AddressMode::ZeroPageY => {
+                let base = bus.read8(self.pc + 1);
+                let addr = base.wrapping_add(self.y) as u16;
+                let val = bus.read8(addr);
+
+                format!("${:02X},Y @ {:02X} = {:02X}", base, addr, val)
+            }
+            AddressMode::Absolute => {
+                let lo = bus.read8(self.pc + 1);
+                let hi = bus.read8(self.pc + 2);
+                let addr = u16::from_le_bytes([lo, hi]);
+                let content = bus.read8(addr);
+                if ins.mnemonic == "JMP" || ins.mnemonic == "JSR" {
+                    format!("${:04X}", addr)
+                } else {
+                    format!("${:04X} = {:02X}", addr, content)
+                }
+            }
+            AddressMode::AbsoluteX => {
+                let lo = bus.read8(self.pc + 1);
+                let hi = bus.read8(self.pc + 2);
+                let base = u16::from_le_bytes([lo, hi]);
+                let addr = base.wrapping_add(self.x as u16);
+                let val = bus.read8(addr);
+
+                format!("${:04X},X @ {:04X} = {:02X}", base, addr, val)
+            }
+            AddressMode::AbsoluteY => {
+                let lo = bus.read8(self.pc + 1);
+                let hi = bus.read8(self.pc + 2);
+                let base = u16::from_le_bytes([lo, hi]);
+                let addr = base.wrapping_add(self.y as u16);
+                let val = bus.read8(addr);
+
+                format!("${:04X},Y @ {:04X} = {:02X}", base, addr, val)
+            }
+            AddressMode::IndirectZeroX => {
+                let base = bus.read8(self.pc + 1);
+                let off = base.wrapping_add(self.x);
+                let lo = bus.read8(off as u16);
+                let hi = bus.read8(off.wrapping_add(1) as u16);
+                let addr = u16::from_le_bytes([lo, hi]);
+                let val = bus.read8(addr);
+
+                format!(
+                    "(${:02X},X) @ {:02X} = {:04X} = {:02X}",
+                    base, off, addr, val
+                )
+            }
+            AddressMode::IndirectZeroY => {
+                let base = bus.read8(self.pc + 1);
+                let lo = bus.read8(base as u16);
+                let hi = bus.read8(base.wrapping_add(1) as u16);
+
+                let target = u16::from_le_bytes([lo, hi]);
+                let fin = target.wrapping_add(self.y as u16);
+                let val = bus.read8(fin);
+
+                format!(
+                    "(${:02X}),Y = {:04X} @ {:04X} = {:02X}",
+                    base, target, fin, val
+                )
+            }
+            AddressMode::Relative => {
+                let addr = bus.read8(self.pc + 1) as i8;
+                let pc = self.pc + 2;
+                let target = pc.wrapping_add(addr as u16);
+
+                format!("${:04X}", target)
+            }
+            AddressMode::Indirect => {
+                let lo = bus.read8(self.pc + 1);
+                let hi = bus.read8(self.pc + 2);
+
+                let ind = u16::from_le_bytes([lo, hi]);
+                let nlo = bus.read8(ind);
+                let bugged_ind = u16::from_le_bytes([lo.wrapping_add(1), hi]);
+                let nhi = bus.read8(bugged_ind);
+                let target = u16::from_le_bytes([nlo, nhi]);
+
+                format!("(${:04X}) = {:04X}", ind, target)
+            }
+            _ => format!("adr???"),
         }
     }
 
@@ -375,7 +534,8 @@ impl Cpu {
     where
         T: Memory,
     {
-        bus.write8(0x0100 | (self.s as u16), self.status);
+        let flags = self.status | flags::B1 | flags::B2;
+        bus.write8(0x0100 | (self.s as u16), flags);
         self.s = self.s.wrapping_sub(1);
         inst.cycle_cost
     }
@@ -384,7 +544,8 @@ impl Cpu {
         T: Memory,
     {
         self.s = self.s.wrapping_add(1);
-        self.status = bus.read8(0x0100 | (self.s as u16));
+        let status = bus.read8(0x0100 | (self.s as u16));
+        self.status = (self.status & (flags::B1 | flags::B2)) | (status & !(flags::B1 | flags::B2));
         inst.cycle_cost
     }
     fn ora<T>(&mut self, inst: &Instruction, bus: &T) -> u8
@@ -545,10 +706,19 @@ impl Cpu {
     where
         T: Memory,
     {
-        let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
-        let m = bus.read8(addr);
-        let r = m << 1;
-        bus.write8(addr, r);
+        let m: u8;
+        let r: u8;
+
+        if AddressMode::Implied == inst.addressing_mode {
+            m = self.a;
+            r = m << 1;
+            self.a = r;
+        } else {
+            let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
+            m = bus.read8(addr);
+            r = m << 1;
+            bus.write8(addr, r);
+        }
 
         self.set_zero_and_negative_flags(r);
         self.set_flag(flags::C, m & 0x80 != 0);
@@ -559,10 +729,19 @@ impl Cpu {
     where
         T: Memory,
     {
-        let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
-        let m = bus.read8(addr);
-        let r = (m << 1) + if self.get_flag(flags::C) { 1 } else { 0 };
-        bus.write8(addr, r);
+        let m: u8;
+        let r: u8;
+
+        if AddressMode::Implied == inst.addressing_mode {
+            m = self.a;
+            r = (m << 1) + if self.get_flag(flags::C) { 1 } else { 0 };
+            self.a = r;
+        } else {
+            let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
+            m = bus.read8(addr);
+            r = (m << 1) + if self.get_flag(flags::C) { 1 } else { 0 };
+            bus.write8(addr, r);
+        }
 
         self.set_zero_and_negative_flags(r);
         self.set_flag(flags::C, m & 0x80 != 0);
@@ -573,11 +752,19 @@ impl Cpu {
     where
         T: Memory,
     {
-        let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
-        let m = bus.read8(addr);
-        let r = m >> 1;
-        bus.write8(addr, r);
+        let m: u8;
+        let r: u8;
 
+        if AddressMode::Implied == inst.addressing_mode {
+            m = self.a;
+            r = m >> 1;
+            self.a = r;
+        } else {
+            let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
+            m = bus.read8(addr);
+            r = m >> 1;
+            bus.write8(addr, r);
+        }
         self.set_zero_and_negative_flags(r);
         self.set_flag(flags::C, m & 0x01 != 0);
 
@@ -587,11 +774,19 @@ impl Cpu {
     where
         T: Memory,
     {
-        let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
-        let m = bus.read8(addr);
-        let r = (m >> 1) + 128 * (if self.get_flag(flags::C) { 1 } else { 0 });
-        bus.write8(addr, r);
+        let m: u8;
+        let r: u8;
 
+        if AddressMode::Implied == inst.addressing_mode {
+            m = self.a;
+            r = (m >> 1) + 128 * (if self.get_flag(flags::C) { 1 } else { 0 });
+            self.a = r;
+        } else {
+            let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
+            m = bus.read8(addr);
+            r = (m >> 1) + 128 * (if self.get_flag(flags::C) { 1 } else { 0 });
+            bus.write8(addr, r);
+        }
         self.set_zero_and_negative_flags(r);
         self.set_flag(flags::C, m & 0x01 != 0);
 
@@ -625,10 +820,9 @@ impl Cpu {
         self.s = self.s.wrapping_sub(1);
         bus.write8(0x0100 | self.s as u16, pc_bytes[0]);
         self.s = self.s.wrapping_sub(1);
-        bus.write8(0x0100 | self.s as u16, self.status);
+        bus.write8(0x0100 | self.s as u16, self.status | flags::B1 | flags::B2);
         self.s = self.s.wrapping_sub(1);
 
-        self.set_flag(flags::B, true);
         self.set_flag(flags::I, true);
 
         let irq_lo = bus.read8(vectors::IRQ);
@@ -649,7 +843,7 @@ impl Cpu {
         self.s = self.s.wrapping_add(1);
         let pc_hi = bus.read8(0x0100 | self.s as u16);
 
-        self.status = status;
+        self.status = (self.status & (flags::B1 | flags::B2)) | (status & !(flags::B1 | flags::B2));
         self.pc = u16::from_le_bytes([pc_lo, pc_hi]);
 
         inst.cycle_cost
@@ -1474,7 +1668,10 @@ mod tests {
             cpu.status = val;
             let cycles = cpu.step(&mut bus);
 
-            assert_eq!(val, bus.read8(0x1ff));
+            let mem_flags = bus.read8(0x1ff);
+            assert!(mem_flags & flags::B1 != 0);
+            assert!(mem_flags & flags::B2 != 0);
+            assert_eq!(val | flags::B1 | flags::B2, mem_flags);
             assert_eq!(cpu.s, 0xfe);
             assert_eq!(cycles, 3);
             assert_eq!(cpu.pc - 0x8000, 1);
@@ -1489,8 +1686,10 @@ mod tests {
             let mut cpu = Cpu::new();
             cpu.s = 0xfe;
             let cycles = cpu.step(&mut bus);
-
-            assert_eq!(cpu.status, bus.read8(0x1ff));
+            let status = bus.read8(0x1ff);
+            let final_status =
+                (cpu.status & (flags::B1 | flags::B2)) | (status & !(flags::B1 | flags::B2));
+            assert_eq!(cpu.status, final_status);
             assert_eq!(cpu.s, 0xff);
             assert_eq!(cycles, 4);
             assert_eq!(cpu.pc - 0x8000, 1);
@@ -2684,6 +2883,22 @@ mod tests {
     }
 
     #[test]
+    fn test_lsr_impl() {
+        let mut bus = Bus::new(0x8000, vec![LSR_IMP]);
+
+        let mut cpu = Cpu::new();
+        cpu.a = 1;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.a, 0);
+        assert_eq!(cpu.get_flag(flags::C), true);
+        assert_eq!(cpu.get_flag(flags::Z), true);
+        assert_eq!(cpu.get_flag(flags::N), false);
+        assert_eq!(cycles, 2);
+        assert_eq!(cpu.pc - 0x8000, 1);
+    }
+
+    #[test]
     fn test_lsr_abs() {
         let mut bus = Bus::new(0x8000, vec![LSR_ABS, 0x02, 0x03]);
         bus.write8(0x0302, 0b0100_0000);
@@ -3102,12 +3317,11 @@ mod tests {
 
         assert_eq!(
             bus.read8(0x0100 + cpu.s.wrapping_add(1) as u16),
-            start_flags
+            start_flags | flags::B1 | flags::B2
         );
         assert_eq!(bus.read8(0x0100 + cpu.s.wrapping_add(2) as u16), 0x24);
         assert_eq!(bus.read8(0x0100 + cpu.s.wrapping_add(3) as u16), 0x81);
         assert_eq!(cpu.pc, 0x1234);
-        assert_eq!(cpu.get_flag(flags::B), true);
         assert_eq!(cpu.get_flag(flags::I), true);
         assert_eq!(cycles, 7);
     }
