@@ -110,6 +110,8 @@ impl Cpu {
             RTI_IMP => self.rti(op, bus),
             JSR_ABS => self.jsr(op, bus),
             RTS_IMP => self.rts(op, bus),
+            JMP_ABS => self.jmp(op, bus),
+            JMP_IND => self.jmp(op, bus),
             // Panic
             o => panic!("unknown opcode: {:X}", o),
         }
@@ -183,10 +185,26 @@ impl Cpu {
             AddressMode::Relative => {
                 let addr = bus.read8(self.pc) as i8;
                 self.pc += 1;
-
+ 
                 let target = self.pc.wrapping_add(addr as u16);
 
                 Address(target, target & 0xFF00 != self.pc & 0xFF00)
+            }
+            AddressMode::Indirect => {
+                let lo = bus.read8(self.pc);
+                self.pc += 1;
+                let hi = bus.read8(self.pc);
+                self.pc += 1;
+
+                let ind = u16::from_le_bytes([lo, hi]);
+                let nlo = bus.read8(ind);
+                
+                let bugged_ind = u16::from_le_bytes([lo.wrapping_add(1), hi]);
+                let nhi = bus.read8(bugged_ind);
+               
+                let target = u16::from_le_bytes([nlo, nhi]);
+
+                Address(target, false)
             }
             _ => panic!("Unsupported addresing mode"),
         }
@@ -620,6 +638,16 @@ impl Cpu {
         let next_pc = pc_less_one.wrapping_add(1);
 
         self.pc = next_pc;
+
+        inst.cycle_cost
+    }
+    fn jmp<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
+    where
+        T: Memory,
+    {
+        let Address(pc_next, _) = self.get_address(&inst.addressing_mode, bus);
+
+        self.pc = pc_next;
 
         inst.cycle_cost
     }
@@ -3064,4 +3092,44 @@ mod tests {
         assert_eq!(cpu.s, 0xFF);
         assert_eq!(cycles_rts, 6);
     }
+
+    #[test]
+    fn test_jmp_abs() {
+        let mut bus = Bus::new(0x8122, vec![JMP_ABS, 0x21, 0x83]);
+
+        let mut cpu = Cpu::new();
+        cpu.pc = 0x8122;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8321);
+        assert_eq!(cycles, 3);
+    } 
+
+    #[test]
+    fn test_jmp_indirect() {
+        let mut bus = Bus::new(0x8122, vec![JMP_IND, 0x21, 0x83]);
+        bus.write8(0x8321, 0x44);
+        bus.write8(0x8322, 0x55);
+
+        let mut cpu = Cpu::new();
+        cpu.pc = 0x8122;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x5544);
+        assert_eq!(cycles, 5);
+    } 
+
+    #[test]
+    fn test_jmp_indirect_bug() {
+        let mut bus = Bus::new(0x8122, vec![JMP_IND, 0xFF, 0x83]);
+        bus.write8(0x83FF, 0x44);
+        bus.write8(0x8300, 0x55);
+
+        let mut cpu = Cpu::new();
+        cpu.pc = 0x8122;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x5544);
+        assert_eq!(cycles, 5);
+    } 
 }
