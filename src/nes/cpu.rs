@@ -15,6 +15,10 @@ mod flags {
     pub const C: u8 = 1 << 0;
 }
 
+mod vectors {
+    pub const IRQ: u16 = 0xFFFE;
+}
+
 pub struct Cpu {
     a: u8,
     x: u8,
@@ -32,7 +36,7 @@ impl Cpu {
             y: 0,
             pc: 0x8000,
             status: 0,
-            s: 0xFF,
+            s: 0,
         };
     }
 
@@ -90,10 +94,10 @@ impl Cpu {
             DEX_IMP => self.dex(op),
             INY_IMP => self.iny(op),
             DEY_IMP => self.dey(op),
-            ASL_IMP| ASL_ZP| ASL_ZPX| ASL_ABS| ASL_ABX => self.asl(op, bus),
-            ROL_IMP| ROL_ZP| ROL_ZPX| ROL_ABS| ROL_ABX => self.rol(op, bus),
-            LSR_IMP| LSR_ZP| LSR_ZPX| LSR_ABS| LSR_ABX => self.lsr(op, bus),
-            ROR_IMP| ROR_ZP| ROR_ZPX| ROR_ABS| ROR_ABX => self.ror(op, bus),
+            ASL_IMP | ASL_ZP | ASL_ZPX | ASL_ABS | ASL_ABX => self.asl(op, bus),
+            ROL_IMP | ROL_ZP | ROL_ZPX | ROL_ABS | ROL_ABX => self.rol(op, bus),
+            LSR_IMP | LSR_ZP | LSR_ZPX | LSR_ABS | LSR_ABX => self.lsr(op, bus),
+            ROR_IMP | ROR_ZP | ROR_ZPX | ROR_ABS | ROR_ABX => self.ror(op, bus),
             BPL_REL => self.branch(op, bus, flags::N, false),
             BMI_REL => self.branch(op, bus, flags::N, true),
             BVC_REL => self.branch(op, bus, flags::V, false),
@@ -102,6 +106,10 @@ impl Cpu {
             BCS_REL => self.branch(op, bus, flags::C, true),
             BNE_REL => self.branch(op, bus, flags::Z, false),
             BEQ_REL => self.branch(op, bus, flags::Z, true),
+            BRK_IMP => self.brk(op, bus),
+            RTI_IMP => self.rti(op, bus),
+            JSR_ABS => self.jsr(op, bus),
+            RTS_IMP => self.rts(op, bus),
             // Panic
             o => panic!("unknown opcode: {:X}", o),
         }
@@ -347,7 +355,7 @@ impl Cpu {
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         let arg = bus.read8(addr);
-        let carry = if self.get_flag(flags::C) {1} else {0};
+        let carry = if self.get_flag(flags::C) { 1 } else { 0 };
         let arg_with_c = arg.wrapping_add(carry);
         let a = self.a;
 
@@ -368,7 +376,7 @@ impl Cpu {
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         let arg = !bus.read8(addr);
-        let carry = if self.get_flag(flags::C) {1} else {0};
+        let carry = if self.get_flag(flags::C) { 1 } else { 0 };
         let arg_with_c = arg.wrapping_add(carry);
         let a = self.a;
 
@@ -389,7 +397,7 @@ impl Cpu {
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         let m = bus.read8(addr);
-        let tmp = self.a.wrapping_sub(m); 
+        let tmp = self.a.wrapping_sub(m);
 
         self.set_zero_and_negative_flags(tmp);
         self.set_flag(flags::C, self.a >= m);
@@ -402,7 +410,7 @@ impl Cpu {
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         let m = bus.read8(addr);
-        let tmp = self.x.wrapping_sub(m); 
+        let tmp = self.x.wrapping_sub(m);
 
         self.set_zero_and_negative_flags(tmp);
         self.set_flag(flags::C, self.x >= m);
@@ -415,14 +423,14 @@ impl Cpu {
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         let m = bus.read8(addr);
-        let tmp = self.y.wrapping_sub(m); 
+        let tmp = self.y.wrapping_sub(m);
 
         self.set_zero_and_negative_flags(tmp);
         self.set_flag(flags::C, self.y >= m);
 
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
-    fn dec<T>(&mut self, inst: &Instruction, bus:&mut T) -> u8 
+    fn dec<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: Memory,
     {
@@ -435,7 +443,7 @@ impl Cpu {
 
         inst.cycle_cost
     }
-    fn inc<T>(&mut self, inst: &Instruction, bus:&mut T) -> u8 
+    fn inc<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: Memory,
     {
@@ -468,7 +476,7 @@ impl Cpu {
         self.set_zero_and_negative_flags(self.y);
         inst.cycle_cost
     }
-    fn asl<T>(&mut self, inst: &Instruction, bus:&mut T) -> u8 
+    fn asl<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: Memory,
     {
@@ -482,13 +490,13 @@ impl Cpu {
 
         inst.cycle_cost
     }
-    fn rol<T>(&mut self, inst: &Instruction, bus:&mut T) -> u8 
+    fn rol<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: Memory,
     {
         let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
         let m = bus.read8(addr);
-        let r = (m << 1) + if self.get_flag(flags::C) {1} else {0};
+        let r = (m << 1) + if self.get_flag(flags::C) { 1 } else { 0 };
         bus.write8(addr, r);
 
         self.set_zero_and_negative_flags(r);
@@ -496,7 +504,7 @@ impl Cpu {
 
         inst.cycle_cost
     }
-    fn lsr<T>(&mut self, inst: &Instruction, bus:&mut T) -> u8 
+    fn lsr<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: Memory,
     {
@@ -510,13 +518,13 @@ impl Cpu {
 
         inst.cycle_cost
     }
-    fn ror<T>(&mut self, inst: &Instruction, bus:&mut T) -> u8 
+    fn ror<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: Memory,
     {
         let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
         let m = bus.read8(addr);
-        let r = (m >> 1) + 128 * (if self.get_flag(flags::C) {1} else {0});
+        let r = (m >> 1) + 128 * (if self.get_flag(flags::C) { 1 } else { 0 });
         bus.write8(addr, r);
 
         self.set_zero_and_negative_flags(r);
@@ -524,7 +532,7 @@ impl Cpu {
 
         inst.cycle_cost
     }
-    fn branch<T>(&mut self, inst: &Instruction, bus:&mut T, flag: u8, branch_when: bool) -> u8 
+    fn branch<T>(&mut self, inst: &Instruction, bus: &mut T, flag: u8, branch_when: bool) -> u8
     where
         T: Memory,
     {
@@ -535,7 +543,85 @@ impl Cpu {
             self.pc = addr;
         }
 
-        inst.cycle_cost + if branch_taken {1 + if page_crossed {1} else {0}} else {0}
+        inst.cycle_cost
+            + if branch_taken {
+                1 + if page_crossed { 1 } else { 0 }
+            } else {
+                0
+            }
+    }
+    fn brk<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
+    where
+        T: Memory,
+    {
+        let pc_bytes = self.pc.to_le_bytes();
+
+        bus.write8(0x0100 | self.s as u16, pc_bytes[1]);
+        self.s = self.s.wrapping_sub(1);
+        bus.write8(0x0100 | self.s as u16, pc_bytes[0]);
+        self.s = self.s.wrapping_sub(1);
+        bus.write8(0x0100 | self.s as u16, self.status);
+        self.s = self.s.wrapping_sub(1);
+
+        self.set_flag(flags::B, true);
+        self.set_flag(flags::I, true);
+
+        let irq_lo = bus.read8(vectors::IRQ);
+        let irq_hi = bus.read8(vectors::IRQ.wrapping_add(1));
+
+        self.pc = u16::from_le_bytes([irq_lo, irq_hi]);
+
+        inst.cycle_cost
+    }
+    fn rti<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
+    where
+        T: Memory,
+    {
+        self.s = self.s.wrapping_add(1);
+        let status = bus.read8(0x0100 | self.s as u16);
+        self.s = self.s.wrapping_add(1);
+        let pc_lo = bus.read8(0x0100 | self.s as u16);
+        self.s = self.s.wrapping_add(1);
+        let pc_hi = bus.read8(0x0100 | self.s as u16);
+
+        self.status = status;
+        self.pc = u16::from_le_bytes([pc_lo, pc_hi]);
+
+        inst.cycle_cost
+    }
+    fn jsr<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
+    where
+        T: Memory,
+    {
+        let Address(pc_next, _) = self.get_address(&inst.addressing_mode, bus);
+
+        let pc_min_one = self.pc.wrapping_sub(1);
+        let pc_bytes = pc_min_one.to_le_bytes();
+
+        bus.write8(0x0100 | self.s as u16, pc_bytes[1]);
+        self.s = self.s.wrapping_sub(1);
+        bus.write8(0x0100 | self.s as u16, pc_bytes[0]);
+        self.s = self.s.wrapping_sub(1);
+
+        self.pc = pc_next;
+
+        inst.cycle_cost
+    }
+    fn rts<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
+    where
+        T: Memory,
+    {
+        self.s = self.s.wrapping_add(1);
+        let pc_lo = bus.read8(0x0100 | self.s as u16);
+        self.s = self.s.wrapping_add(1);
+        let pc_hi = bus.read8(0x0100 | self.s as u16);
+
+        let pc_less_one = u16::from_le_bytes([pc_lo, pc_hi]);
+        let next_pc = pc_less_one.wrapping_add(1);
+
+        self.pc = next_pc;
+
+        inst.cycle_cost
     }
 }
 
@@ -1258,6 +1344,7 @@ mod tests {
             let mut bus = Bus::new(0x8000, vec![PHA_IMP]);
             bus.write8(0x01ff, 0);
             let mut cpu = Cpu::new();
+            cpu.s = 0xff;
             cpu.a = val;
             let cycles = cpu.step(&mut bus);
 
@@ -1292,6 +1379,7 @@ mod tests {
             let mut bus = Bus::new(0x8000, vec![PHP_IMP]);
             bus.write8(0x01ff, 0);
             let mut cpu = Cpu::new();
+            cpu.s = 0xff;
             cpu.status = val;
             let cycles = cpu.step(&mut bus);
 
@@ -1954,7 +2042,7 @@ mod tests {
             cpu.a = org_a;
             let cycles = cpu.step(&mut bus);
 
-            assert_eq!(cpu.a,org_a.wrapping_add(val));
+            assert_eq!(cpu.a, org_a.wrapping_add(val));
             assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
             assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 2);
@@ -1973,7 +2061,7 @@ mod tests {
             cpu.set_flag(flags::C, true);
             let cycles = cpu.step(&mut bus);
 
-            assert_eq!(cpu.a,org_a.wrapping_add(val).wrapping_add(1));
+            assert_eq!(cpu.a, org_a.wrapping_add(val).wrapping_add(1));
             assert_eq!(cpu.get_flag(flags::N), (cpu.a as i8) < 0);
             assert_eq!(cpu.get_flag(flags::Z), cpu.a == 0);
             assert_eq!(cycles, 2);
@@ -2004,7 +2092,7 @@ mod tests {
         let mut cpu = Cpu::new();
         let org_a = 0x0f;
 
-        cpu.a = -1 as i8 as u8;;
+        cpu.a = -1 as i8 as u8;
         let cycles = cpu.step(&mut bus);
 
         assert_eq!(cpu.a, 0);
@@ -2017,7 +2105,7 @@ mod tests {
         let mut cpu = Cpu::new();
         let org_a = 0x0f;
 
-        cpu.a = -1 as i8 as u8;;
+        cpu.a = -1 as i8 as u8;
         let cycles = cpu.step(&mut bus);
 
         assert_eq!(cpu.a, 0);
@@ -2079,7 +2167,7 @@ mod tests {
 
     #[test]
     fn test_adc_overflow_none_negative() {
-        let mut bus = Bus::new(0x8000, vec![ADC_IMM,((-2 as i8) as u8) ]);
+        let mut bus = Bus::new(0x8000, vec![ADC_IMM, ((-2 as i8) as u8)]);
         let mut cpu = Cpu::new();
         let org_a = (-5 as i8) as u8;
 
@@ -2191,7 +2279,7 @@ mod tests {
         cpu.set_flag(flags::C, true);
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(cpu.a, 128 );
+        assert_eq!(cpu.a, 128);
         assert_eq!(cpu.get_flag(flags::V), true);
     }
 
@@ -2203,10 +2291,9 @@ mod tests {
         cpu.a = 0xc0;
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(cpu.a, -129 as i16 as u8 );
+        assert_eq!(cpu.a, -129 as i16 as u8);
         assert_eq!(cpu.get_flag(flags::V), true);
     }
-    
 
     #[test]
     fn test_cmp_less_with_negative() {
@@ -2400,7 +2487,7 @@ mod tests {
         let mut cpu = Cpu::new();
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302),0b1000_0000);
+        assert_eq!(bus.read8(0x0302), 0b1000_0000);
         assert_eq!(cpu.get_flag(flags::C), false);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), true);
@@ -2416,7 +2503,7 @@ mod tests {
         let mut cpu = Cpu::new();
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302),0b0000_0000);
+        assert_eq!(bus.read8(0x0302), 0b0000_0000);
         assert_eq!(cpu.get_flag(flags::C), true);
         assert_eq!(cpu.get_flag(flags::Z), true);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2432,7 +2519,7 @@ mod tests {
         let mut cpu = Cpu::new();
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302),0b0101_0100);
+        assert_eq!(bus.read8(0x0302), 0b0101_0100);
         assert_eq!(cpu.get_flag(flags::C), false);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2449,7 +2536,7 @@ mod tests {
         cpu.set_flag(flags::C, true);
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302),0b1000_0001);
+        assert_eq!(bus.read8(0x0302), 0b1000_0001);
         assert_eq!(cpu.get_flag(flags::C), false);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), true);
@@ -2465,7 +2552,7 @@ mod tests {
         let mut cpu = Cpu::new();
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302),0b0000_0000);
+        assert_eq!(bus.read8(0x0302), 0b0000_0000);
         assert_eq!(cpu.get_flag(flags::C), true);
         assert_eq!(cpu.get_flag(flags::Z), true);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2482,7 +2569,7 @@ mod tests {
         cpu.set_flag(flags::C, true);
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302),0b0000_0001);
+        assert_eq!(bus.read8(0x0302), 0b0000_0001);
         assert_eq!(cpu.get_flag(flags::C), true);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2499,7 +2586,7 @@ mod tests {
         cpu.set_flag(flags::C, true);
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302),0b0101_0101);
+        assert_eq!(bus.read8(0x0302), 0b0101_0101);
         assert_eq!(cpu.get_flag(flags::C), false);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2515,7 +2602,7 @@ mod tests {
         let mut cpu = Cpu::new();
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302),0b0010_0000);
+        assert_eq!(bus.read8(0x0302), 0b0010_0000);
         assert_eq!(cpu.get_flag(flags::C), false);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2531,7 +2618,7 @@ mod tests {
         let mut cpu = Cpu::new();
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302),0b0000_0000);
+        assert_eq!(bus.read8(0x0302), 0b0000_0000);
         assert_eq!(cpu.get_flag(flags::C), true);
         assert_eq!(cpu.get_flag(flags::Z), true);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2547,7 +2634,7 @@ mod tests {
         let mut cpu = Cpu::new();
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302),0b0001_0101);
+        assert_eq!(bus.read8(0x0302), 0b0001_0101);
         assert_eq!(cpu.get_flag(flags::C), false);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2564,7 +2651,7 @@ mod tests {
         cpu.set_flag(flags::C, true);
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302),0b1010_0000);
+        assert_eq!(bus.read8(0x0302), 0b1010_0000);
         assert_eq!(cpu.get_flag(flags::C), false);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), true);
@@ -2580,7 +2667,7 @@ mod tests {
         let mut cpu = Cpu::new();
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302),0b0000_0000);
+        assert_eq!(bus.read8(0x0302), 0b0000_0000);
         assert_eq!(cpu.get_flag(flags::C), true);
         assert_eq!(cpu.get_flag(flags::Z), true);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2597,7 +2684,7 @@ mod tests {
         cpu.set_flag(flags::C, true);
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302),0b1100_0000);
+        assert_eq!(bus.read8(0x0302), 0b1100_0000);
         assert_eq!(cpu.get_flag(flags::C), true);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), true);
@@ -2838,9 +2925,6 @@ mod tests {
         assert_eq!(cycles, 4);
     }
 
-
-
-
     #[test]
     fn test_bne_taken_diffrent_page() {
         let mut bus = Bus::new(0x8000, vec![BNE_REL, -20 as i8 as u8]);
@@ -2911,5 +2995,73 @@ mod tests {
 
         assert_eq!(cpu.pc, 0x8000 - 20 + 2);
         assert_eq!(cycles, 4);
+    }
+
+    #[test]
+    fn test_brk() {
+        let start_flags = 0b1110_1011;
+
+        let mut bus = Bus::new(0x8123, vec![BRK_IMP]);
+        bus.write8(vectors::IRQ, 0x34);
+        bus.write8(vectors::IRQ.wrapping_add(1), 0x12);
+
+        let mut cpu = Cpu::new();
+        cpu.s = 0xff;
+        cpu.pc = 0x8123;
+        cpu.status = start_flags;
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(bus.read8(0x0100 + cpu.s.wrapping_add(1) as u16), start_flags);
+        assert_eq!(bus.read8(0x0100 + cpu.s.wrapping_add(2) as u16), 0x24);
+        assert_eq!(bus.read8(0x0100 + cpu.s.wrapping_add(3) as u16), 0x81);
+        assert_eq!(cpu.pc, 0x1234);
+        assert_eq!(cpu.get_flag(flags::B), true);
+        assert_eq!(cpu.get_flag(flags::I), true);
+        assert_eq!(cycles, 7);
+    }
+
+    #[test]
+    fn test_brk_rti() {
+        let start_flags = 0b1110_1011;
+
+        let mut bus = Bus::new(0x8123, vec![BRK_IMP]);
+        bus.write8(vectors::IRQ, 0x34);
+        bus.write8(vectors::IRQ.wrapping_add(1), 0x12);
+        bus.write8(0x1234, RTI_IMP);
+
+        let mut cpu = Cpu::new();
+        cpu.s = 0xff;
+        cpu.pc = 0x8123;
+        cpu.status = start_flags;
+        cpu.step(&mut bus);
+        let cycles = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8124);
+        assert_eq!(cpu.status, start_flags);
+        assert_eq!(cycles, 6);
+    }
+
+    #[test]
+    fn test_jsr_rts() {
+        let mut bus = Bus::new(0x8122, vec![JSR_ABS, 0x21, 0x83]);
+        bus.write8(0x8321, RTS_IMP);
+
+        let mut cpu = Cpu::new();
+        cpu.s = 0xff;
+        cpu.pc = 0x8122;
+        let cycles_jsr = cpu.step(&mut bus);
+
+        assert_eq!(cpu.pc, 0x8321);
+        assert_eq!(cpu.s, 0xFD);
+        assert_eq!(bus.read8(0x0100 + cpu.s.wrapping_add(1) as u16), 0x24);
+        assert_eq!(bus.read8(0x0100 + cpu.s.wrapping_add(2) as u16), 0x81);
+        assert_eq!(cycles_jsr, 6);
+        
+
+        let cycles_rts = cpu.step(&mut bus);
+        
+        assert_eq!(cpu.pc, 0x8125);
+        assert_eq!(cpu.s, 0xFF);
+        assert_eq!(cycles_rts, 6);
     }
 }

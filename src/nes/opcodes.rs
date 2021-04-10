@@ -163,6 +163,14 @@ pub const BCS_REL: u8 = 0xB0;
 pub const BNE_REL: u8 = 0xD0;
 pub const BEQ_REL: u8 = 0xF0;
 
+pub const BRK_IMP: u8 = 0x00;
+pub const RTI_IMP: u8 = 0x40;
+pub const JSR_ABS: u8 = 0x20;
+pub const RTS_IMP: u8 = 0x60;
+
+pub const JMP_ABS: u8 = 0x4C;
+pub const JMP_IND: u8 = 0x4C;
+
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum AddressMode {
