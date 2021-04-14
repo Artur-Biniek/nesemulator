@@ -1,4 +1,5 @@
 use super::bus::Memory;
+use super::clock::Clockable;
 use super::opcodes::AddressMode;
 use super::opcodes::*;
 
@@ -30,6 +31,13 @@ pub struct Cpu {
     pub pc: u16,
     status: u8,
     s: u8,
+    cycles_left: u8,
+}
+
+impl Clockable for Cpu {
+    fn clock() {
+        todo!()
+    }
 }
 
 impl Cpu {
@@ -41,6 +49,7 @@ impl Cpu {
             pc: 0x8000,
             status: FLAGS_RESET,
             s: STACK_RESET,
+            cycles_left: 0,
         };
     }
 
@@ -54,17 +63,28 @@ impl Cpu {
         self.s = STACK_RESET;
         self.status = FLAGS_RESET;
 
-        let pc_lo = bus.read8(vectors::RESET);
-        let pc_hi = bus.read8(vectors::RESET.wrapping_add(1));
+        let pc_lo = bus.read(vectors::RESET);
+        let pc_hi = bus.read(vectors::RESET.wrapping_add(1));
 
         self.pc = u16::from_le_bytes([pc_lo, pc_hi]);
+    }
+
+    pub fn clock<T>(&mut self, bus: &mut T)
+    where
+        T: Memory,
+    {
+        if self.cycles_left == 0 {
+            self.dump(bus);
+            self.cycles_left = self.step(bus);
+        }
+        self.cycles_left -= 1;
     }
 
     pub fn dump<T>(&self, bus: &T)
     where
         T: Memory,
     {
-        let ins = get_inst(bus.read8(self.pc));
+        let ins = get_inst(bus.read(self.pc));
         println!(
             "{:04X}  {}  {} {:26}  {}",
             self.pc,
@@ -75,11 +95,11 @@ impl Cpu {
         );
     }
 
-    pub fn step<T>(&mut self, bus: &mut T) -> u8
+    fn step<T>(&mut self, bus: &mut T) -> u8
     where
         T: Memory,
     {
-        let ins = bus.read8(self.pc);
+        let ins = bus.read(self.pc);
         self.pc += 1;
 
         let op = get_inst(ins);
@@ -188,17 +208,17 @@ impl Cpu {
     {
         let size = Cpu::get_instruction_size(ins);
         let a = if size > 0 {
-            format!("{:02X}", bus.read8(self.pc))
+            format!("{:02X}", bus.read(self.pc))
         } else {
             format!("  ")
         };
         let b = if size > 1 {
-            format!("{:02X}", bus.read8(self.pc + 1))
+            format!("{:02X}", bus.read(self.pc + 1))
         } else {
             format!("  ")
         };
         let c = if size > 2 {
-            format!("{:02X}", bus.read8(self.pc + 2))
+            format!("{:02X}", bus.read(self.pc + 2))
         } else {
             format!("  ")
         };
@@ -218,33 +238,33 @@ impl Cpu {
             },
             AddressMode::Immediate => {
                 let addr = self.pc + 1;
-                format!("#${:02X}", bus.read8(addr))
+                format!("#${:02X}", bus.read(addr))
             }
             AddressMode::ZeroPage => {
-                let addr = bus.read8(self.pc + 1) as u16;
-                let value = bus.read8(addr);
+                let addr = bus.read(self.pc + 1) as u16;
+                let value = bus.read(addr);
 
                 format!("${:02X} = {:02X} ", addr, value)
             }
             AddressMode::ZeroPageX => {
-                let base = bus.read8(self.pc + 1);
+                let base = bus.read(self.pc + 1);
                 let addr = base.wrapping_add(self.x) as u16;
-                let val = bus.read8(addr);
+                let val = bus.read(addr);
 
                 format!("${:02X},X @ {:02X} = {:02X}", base, addr, val)
             }
             AddressMode::ZeroPageY => {
-                let base = bus.read8(self.pc + 1);
+                let base = bus.read(self.pc + 1);
                 let addr = base.wrapping_add(self.y) as u16;
-                let val = bus.read8(addr);
+                let val = bus.read(addr);
 
                 format!("${:02X},Y @ {:02X} = {:02X}", base, addr, val)
             }
             AddressMode::Absolute => {
-                let lo = bus.read8(self.pc + 1);
-                let hi = bus.read8(self.pc + 2);
+                let lo = bus.read(self.pc + 1);
+                let hi = bus.read(self.pc + 2);
                 let addr = u16::from_le_bytes([lo, hi]);
-                let content = bus.read8(addr);
+                let content = bus.read(addr);
                 if ins.mnemonic == "JMP" || ins.mnemonic == "JSR" {
                     format!("${:04X}", addr)
                 } else {
@@ -252,30 +272,30 @@ impl Cpu {
                 }
             }
             AddressMode::AbsoluteX => {
-                let lo = bus.read8(self.pc + 1);
-                let hi = bus.read8(self.pc + 2);
+                let lo = bus.read(self.pc + 1);
+                let hi = bus.read(self.pc + 2);
                 let base = u16::from_le_bytes([lo, hi]);
                 let addr = base.wrapping_add(self.x as u16);
-                let val = bus.read8(addr);
+                let val = bus.read(addr);
 
                 format!("${:04X},X @ {:04X} = {:02X}", base, addr, val)
             }
             AddressMode::AbsoluteY => {
-                let lo = bus.read8(self.pc + 1);
-                let hi = bus.read8(self.pc + 2);
+                let lo = bus.read(self.pc + 1);
+                let hi = bus.read(self.pc + 2);
                 let base = u16::from_le_bytes([lo, hi]);
                 let addr = base.wrapping_add(self.y as u16);
-                let val = bus.read8(addr);
+                let val = bus.read(addr);
 
                 format!("${:04X},Y @ {:04X} = {:02X}", base, addr, val)
             }
             AddressMode::IndirectZeroX => {
-                let base = bus.read8(self.pc + 1);
+                let base = bus.read(self.pc + 1);
                 let off = base.wrapping_add(self.x);
-                let lo = bus.read8(off as u16);
-                let hi = bus.read8(off.wrapping_add(1) as u16);
+                let lo = bus.read(off as u16);
+                let hi = bus.read(off.wrapping_add(1) as u16);
                 let addr = u16::from_le_bytes([lo, hi]);
-                let val = bus.read8(addr);
+                let val = bus.read(addr);
 
                 format!(
                     "(${:02X},X) @ {:02X} = {:04X} = {:02X}",
@@ -283,13 +303,13 @@ impl Cpu {
                 )
             }
             AddressMode::IndirectZeroY => {
-                let base = bus.read8(self.pc + 1);
-                let lo = bus.read8(base as u16);
-                let hi = bus.read8(base.wrapping_add(1) as u16);
+                let base = bus.read(self.pc + 1);
+                let lo = bus.read(base as u16);
+                let hi = bus.read(base.wrapping_add(1) as u16);
 
                 let target = u16::from_le_bytes([lo, hi]);
                 let fin = target.wrapping_add(self.y as u16);
-                let val = bus.read8(fin);
+                let val = bus.read(fin);
 
                 format!(
                     "(${:02X}),Y = {:04X} @ {:04X} = {:02X}",
@@ -297,20 +317,20 @@ impl Cpu {
                 )
             }
             AddressMode::Relative => {
-                let addr = bus.read8(self.pc + 1) as i8;
+                let addr = bus.read(self.pc + 1) as i8;
                 let pc = self.pc + 2;
                 let target = pc.wrapping_add(addr as u16);
 
                 format!("${:04X}", target)
             }
             AddressMode::Indirect => {
-                let lo = bus.read8(self.pc + 1);
-                let hi = bus.read8(self.pc + 2);
+                let lo = bus.read(self.pc + 1);
+                let hi = bus.read(self.pc + 2);
 
                 let ind = u16::from_le_bytes([lo, hi]);
-                let nlo = bus.read8(ind);
+                let nlo = bus.read(ind);
                 let bugged_ind = u16::from_le_bytes([lo.wrapping_add(1), hi]);
-                let nhi = bus.read8(bugged_ind);
+                let nhi = bus.read(bugged_ind);
                 let target = u16::from_le_bytes([nlo, nhi]);
 
                 format!("(${:04X}) = {:04X}", ind, target)
@@ -331,30 +351,30 @@ impl Cpu {
                 Address(addr, false)
             }
             AddressMode::ZeroPage => {
-                let addr = bus.read8(self.pc) as u16;
+                let addr = bus.read(self.pc) as u16;
                 self.pc += 1;
                 Address(addr, false)
             }
             AddressMode::ZeroPageX => {
-                let addr = bus.read8(self.pc).wrapping_add(self.x) as u16;
+                let addr = bus.read(self.pc).wrapping_add(self.x) as u16;
                 self.pc += 1;
                 Address(addr, false)
             }
             AddressMode::ZeroPageY => {
-                let addr = bus.read8(self.pc).wrapping_add(self.y) as u16;
+                let addr = bus.read(self.pc).wrapping_add(self.y) as u16;
                 self.pc += 1;
                 Address(addr, false)
             }
             AddressMode::Absolute => {
-                let lo = bus.read8(self.pc);
-                let hi = bus.read8(self.pc + 1);
+                let lo = bus.read(self.pc);
+                let hi = bus.read(self.pc + 1);
                 let addr = u16::from_le_bytes([lo, hi]);
                 self.pc += 2;
                 Address(addr, false)
             }
             AddressMode::AbsoluteX => {
-                let lo = bus.read8(self.pc);
-                let hi = bus.read8(self.pc + 1);
+                let lo = bus.read(self.pc);
+                let hi = bus.read(self.pc + 1);
                 let base = u16::from_le_bytes([lo, hi]);
                 self.pc += 2;
                 let addr = base.wrapping_add(self.x as u16);
@@ -362,8 +382,8 @@ impl Cpu {
                 Address(addr, base & 0xFF00 != addr & 0xFF00)
             }
             AddressMode::AbsoluteY => {
-                let lo = bus.read8(self.pc);
-                let hi = bus.read8(self.pc + 1);
+                let lo = bus.read(self.pc);
+                let hi = bus.read(self.pc + 1);
                 let base = u16::from_le_bytes([lo, hi]);
                 self.pc += 2;
                 let addr = base.wrapping_add(self.y as u16);
@@ -371,20 +391,20 @@ impl Cpu {
                 Address(addr, base & 0xFF00 != addr & 0xFF00)
             }
             AddressMode::IndirectZeroX => {
-                let base = bus.read8(self.pc);
+                let base = bus.read(self.pc);
                 self.pc += 1;
                 let off = base.wrapping_add(self.x);
-                let lo = bus.read8(off as u16) as u16;
-                let hi = bus.read8(off.wrapping_add(1) as u16) as u16;
+                let lo = bus.read(off as u16) as u16;
+                let hi = bus.read(off.wrapping_add(1) as u16) as u16;
 
                 Address(hi << 8 | lo, false)
             }
             AddressMode::IndirectZeroY => {
-                let base = bus.read8(self.pc);
+                let base = bus.read(self.pc);
                 self.pc += 1;
 
-                let lo = bus.read8(base as u16) as u16;
-                let hi = bus.read8(base.wrapping_add(1) as u16) as u16;
+                let lo = bus.read(base as u16) as u16;
+                let hi = bus.read(base.wrapping_add(1) as u16) as u16;
 
                 let target = hi << 8 | lo;
                 let fin = target.wrapping_add(self.y as u16);
@@ -392,22 +412,22 @@ impl Cpu {
                 Address(fin, target & 0xFF00 != fin & 0xFF00)
             }
             AddressMode::Relative => {
-                let addr = bus.read8(self.pc) as i8;
+                let addr = bus.read(self.pc) as i8;
                 self.pc += 1;
                 let target = self.pc.wrapping_add(addr as u16);
 
                 Address(target, target & 0xFF00 != self.pc & 0xFF00)
             }
             AddressMode::Indirect => {
-                let lo = bus.read8(self.pc);
+                let lo = bus.read(self.pc);
                 self.pc += 1;
-                let hi = bus.read8(self.pc);
+                let hi = bus.read(self.pc);
                 self.pc += 1;
 
                 let ind = u16::from_le_bytes([lo, hi]);
-                let nlo = bus.read8(ind);
+                let nlo = bus.read(ind);
                 let bugged_ind = u16::from_le_bytes([lo.wrapping_add(1), hi]);
-                let nhi = bus.read8(bugged_ind);
+                let nhi = bus.read(bugged_ind);
                 let target = u16::from_le_bytes([nlo, nhi]);
 
                 Address(target, false)
@@ -438,7 +458,7 @@ impl Cpu {
         T: Memory,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
-        self.a = bus.read8(addr);
+        self.a = bus.read(addr);
         self.set_zero_and_negative_flags(self.a);
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
@@ -447,7 +467,7 @@ impl Cpu {
         T: Memory,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
-        bus.write8(addr, self.a);
+        bus.write(addr, self.a);
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
     fn ldx<T>(&mut self, inst: &Instruction, bus: &T) -> u8
@@ -455,7 +475,7 @@ impl Cpu {
         T: Memory,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
-        self.x = bus.read8(addr);
+        self.x = bus.read(addr);
         self.set_zero_and_negative_flags(self.x);
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
@@ -464,7 +484,7 @@ impl Cpu {
         T: Memory,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
-        bus.write8(addr, self.x);
+        bus.write(addr, self.x);
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
     fn ldy<T>(&mut self, inst: &Instruction, bus: &T) -> u8
@@ -472,7 +492,7 @@ impl Cpu {
         T: Memory,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
-        self.y = bus.read8(addr);
+        self.y = bus.read(addr);
         self.set_zero_and_negative_flags(self.y);
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
@@ -481,7 +501,7 @@ impl Cpu {
         T: Memory,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
-        bus.write8(addr, self.y);
+        bus.write(addr, self.y);
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
     fn tax(&mut self, inst: &Instruction) -> u8 {
@@ -517,7 +537,7 @@ impl Cpu {
     where
         T: Memory,
     {
-        bus.write8(0x0100 | (self.s as u16), self.a);
+        bus.write(0x0100 | (self.s as u16), self.a);
         self.s = self.s.wrapping_sub(1);
         inst.cycle_cost
     }
@@ -526,7 +546,7 @@ impl Cpu {
         T: Memory,
     {
         self.s = self.s.wrapping_add(1);
-        self.a = bus.read8(0x0100 | (self.s as u16));
+        self.a = bus.read(0x0100 | (self.s as u16));
         self.set_zero_and_negative_flags(self.a);
         inst.cycle_cost
     }
@@ -535,7 +555,7 @@ impl Cpu {
         T: Memory,
     {
         let flags = self.status | flags::B1 | flags::B2;
-        bus.write8(0x0100 | (self.s as u16), flags);
+        bus.write(0x0100 | (self.s as u16), flags);
         self.s = self.s.wrapping_sub(1);
         inst.cycle_cost
     }
@@ -544,7 +564,7 @@ impl Cpu {
         T: Memory,
     {
         self.s = self.s.wrapping_add(1);
-        let status = bus.read8(0x0100 | (self.s as u16));
+        let status = bus.read(0x0100 | (self.s as u16));
         self.status = (self.status & (flags::B1 | flags::B2)) | (status & !(flags::B1 | flags::B2));
         inst.cycle_cost
     }
@@ -553,7 +573,7 @@ impl Cpu {
         T: Memory,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
-        self.a |= bus.read8(addr);
+        self.a |= bus.read(addr);
         self.set_zero_and_negative_flags(self.a);
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
@@ -562,7 +582,7 @@ impl Cpu {
         T: Memory,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
-        self.a &= bus.read8(addr);
+        self.a &= bus.read(addr);
         self.set_zero_and_negative_flags(self.a);
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
@@ -571,7 +591,7 @@ impl Cpu {
         T: Memory,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
-        self.a ^= bus.read8(addr);
+        self.a ^= bus.read(addr);
         self.set_zero_and_negative_flags(self.a);
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
@@ -580,7 +600,7 @@ impl Cpu {
         T: Memory,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
-        let arg = bus.read8(addr);
+        let arg = bus.read(addr);
         let carry = if self.get_flag(flags::C) { 1 } else { 0 };
         let arg_with_c = arg.wrapping_add(carry);
         let a = self.a;
@@ -601,7 +621,7 @@ impl Cpu {
         T: Memory,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
-        let arg = !bus.read8(addr);
+        let arg = !bus.read(addr);
         let carry = if self.get_flag(flags::C) { 1 } else { 0 };
         let arg_with_c = arg.wrapping_add(carry);
         let a = self.a;
@@ -622,7 +642,7 @@ impl Cpu {
         T: Memory,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
-        let m = bus.read8(addr);
+        let m = bus.read(addr);
         let tmp = self.a.wrapping_sub(m);
 
         self.set_zero_and_negative_flags(tmp);
@@ -635,7 +655,7 @@ impl Cpu {
         T: Memory,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
-        let m = bus.read8(addr);
+        let m = bus.read(addr);
         let tmp = self.x.wrapping_sub(m);
 
         self.set_zero_and_negative_flags(tmp);
@@ -648,7 +668,7 @@ impl Cpu {
         T: Memory,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
-        let m = bus.read8(addr);
+        let m = bus.read(addr);
         let tmp = self.y.wrapping_sub(m);
 
         self.set_zero_and_negative_flags(tmp);
@@ -661,9 +681,9 @@ impl Cpu {
         T: Memory,
     {
         let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
-        let m = bus.read8(addr);
+        let m = bus.read(addr);
         let r = m.wrapping_sub(1);
-        bus.write8(addr, r);
+        bus.write(addr, r);
 
         self.set_zero_and_negative_flags(r);
 
@@ -674,9 +694,9 @@ impl Cpu {
         T: Memory,
     {
         let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
-        let m = bus.read8(addr);
+        let m = bus.read(addr);
         let r = m.wrapping_add(1);
-        bus.write8(addr, r);
+        bus.write(addr, r);
 
         self.set_zero_and_negative_flags(r);
 
@@ -715,9 +735,9 @@ impl Cpu {
             self.a = r;
         } else {
             let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
-            m = bus.read8(addr);
+            m = bus.read(addr);
             r = m << 1;
-            bus.write8(addr, r);
+            bus.write(addr, r);
         }
 
         self.set_zero_and_negative_flags(r);
@@ -738,9 +758,9 @@ impl Cpu {
             self.a = r;
         } else {
             let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
-            m = bus.read8(addr);
+            m = bus.read(addr);
             r = (m << 1) + if self.get_flag(flags::C) { 1 } else { 0 };
-            bus.write8(addr, r);
+            bus.write(addr, r);
         }
 
         self.set_zero_and_negative_flags(r);
@@ -761,9 +781,9 @@ impl Cpu {
             self.a = r;
         } else {
             let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
-            m = bus.read8(addr);
+            m = bus.read(addr);
             r = m >> 1;
-            bus.write8(addr, r);
+            bus.write(addr, r);
         }
         self.set_zero_and_negative_flags(r);
         self.set_flag(flags::C, m & 0x01 != 0);
@@ -783,9 +803,9 @@ impl Cpu {
             self.a = r;
         } else {
             let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
-            m = bus.read8(addr);
+            m = bus.read(addr);
             r = (m >> 1) + 128 * (if self.get_flag(flags::C) { 1 } else { 0 });
-            bus.write8(addr, r);
+            bus.write(addr, r);
         }
         self.set_zero_and_negative_flags(r);
         self.set_flag(flags::C, m & 0x01 != 0);
@@ -816,17 +836,17 @@ impl Cpu {
     {
         let pc_bytes = self.pc.to_le_bytes();
 
-        bus.write8(0x0100 | self.s as u16, pc_bytes[1]);
+        bus.write(0x0100 | self.s as u16, pc_bytes[1]);
         self.s = self.s.wrapping_sub(1);
-        bus.write8(0x0100 | self.s as u16, pc_bytes[0]);
+        bus.write(0x0100 | self.s as u16, pc_bytes[0]);
         self.s = self.s.wrapping_sub(1);
-        bus.write8(0x0100 | self.s as u16, self.status | flags::B1 | flags::B2);
+        bus.write(0x0100 | self.s as u16, self.status | flags::B1 | flags::B2);
         self.s = self.s.wrapping_sub(1);
 
         self.set_flag(flags::I, true);
 
-        let irq_lo = bus.read8(vectors::IRQ);
-        let irq_hi = bus.read8(vectors::IRQ.wrapping_add(1));
+        let irq_lo = bus.read(vectors::IRQ);
+        let irq_hi = bus.read(vectors::IRQ.wrapping_add(1));
 
         self.pc = u16::from_le_bytes([irq_lo, irq_hi]);
 
@@ -837,11 +857,11 @@ impl Cpu {
         T: Memory,
     {
         self.s = self.s.wrapping_add(1);
-        let status = bus.read8(0x0100 | self.s as u16);
+        let status = bus.read(0x0100 | self.s as u16);
         self.s = self.s.wrapping_add(1);
-        let pc_lo = bus.read8(0x0100 | self.s as u16);
+        let pc_lo = bus.read(0x0100 | self.s as u16);
         self.s = self.s.wrapping_add(1);
-        let pc_hi = bus.read8(0x0100 | self.s as u16);
+        let pc_hi = bus.read(0x0100 | self.s as u16);
 
         self.status = (self.status & (flags::B1 | flags::B2)) | (status & !(flags::B1 | flags::B2));
         self.pc = u16::from_le_bytes([pc_lo, pc_hi]);
@@ -857,9 +877,9 @@ impl Cpu {
         let pc_min_one = self.pc.wrapping_sub(1);
         let pc_bytes = pc_min_one.to_le_bytes();
 
-        bus.write8(0x0100 | self.s as u16, pc_bytes[1]);
+        bus.write(0x0100 | self.s as u16, pc_bytes[1]);
         self.s = self.s.wrapping_sub(1);
-        bus.write8(0x0100 | self.s as u16, pc_bytes[0]);
+        bus.write(0x0100 | self.s as u16, pc_bytes[0]);
         self.s = self.s.wrapping_sub(1);
 
         self.pc = pc_next;
@@ -871,9 +891,9 @@ impl Cpu {
         T: Memory,
     {
         self.s = self.s.wrapping_add(1);
-        let pc_lo = bus.read8(0x0100 | self.s as u16);
+        let pc_lo = bus.read(0x0100 | self.s as u16);
         self.s = self.s.wrapping_add(1);
-        let pc_hi = bus.read8(0x0100 | self.s as u16);
+        let pc_hi = bus.read(0x0100 | self.s as u16);
 
         let pc_less_one = u16::from_le_bytes([pc_lo, pc_hi]);
         let next_pc = pc_less_one.wrapping_add(1);
@@ -897,7 +917,7 @@ impl Cpu {
         T: Memory,
     {
         let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
-        let m = bus.read8(addr);
+        let m = bus.read(addr);
 
         let res = self.a & m;
         self.set_flag(flags::Z, res == 0);
@@ -938,10 +958,10 @@ mod tests {
     }
 
     impl Memory for Bus {
-        fn write8(&mut self, addr: u16, v: u8) {
+        fn write(&mut self, addr: u16, v: u8) {
             self.data.insert(addr, v);
         }
-        fn read8(&self, addr: u16) -> u8 {
+        fn read(&self, addr: u16) -> u8 {
             if let Some(v) = self.data.get(&addr) {
                 *v
             } else {
@@ -978,7 +998,7 @@ mod tests {
     fn test_lda_zero_page() {
         for val in 0..=255 {
             let mut bus = Bus::new(0x8000, vec![LDA_ZP, 0x14]);
-            bus.write8(0x14, val);
+            bus.write(0x14, val);
 
             let mut cpu = Cpu::new();
             let cycles = cpu.step(&mut bus);
@@ -996,7 +1016,7 @@ mod tests {
     fn test_lda_zero_page_x() {
         for val in 0..=255 {
             let mut bus = Bus::new(0x8000, vec![LDA_ZPX, 0x05]);
-            bus.write8(0x04, val);
+            bus.write(0x04, val);
 
             let mut cpu = Cpu::new();
             cpu.x = 0xFF;
@@ -1015,7 +1035,7 @@ mod tests {
     fn test_lda_absolute() {
         for val in 0..=255 {
             let mut bus = Bus::new(0x8000, vec![LDA_ABS, 0x05, 0x02]);
-            bus.write8(0x0205, val);
+            bus.write(0x0205, val);
 
             let mut cpu = Cpu::new();
             let cycles = cpu.step(&mut bus);
@@ -1037,7 +1057,7 @@ mod tests {
             let base = (base_hi as u16) << 8 | (base_lo as u16);
             let mut bus = Bus::new(0x8000, vec![LDA_ABX, base_lo, base_hi]);
             let target = base.wrapping_add(val as u16);
-            bus.write8(target, val);
+            bus.write(target, val);
 
             let mut cpu = Cpu::new();
             cpu.x = val;
@@ -1065,7 +1085,7 @@ mod tests {
             let base = (base_hi as u16) << 8 | (base_lo as u16);
             let mut bus = Bus::new(0x8000, vec![LDA_ABY, base_lo, base_hi]);
             let target = base.wrapping_add(val as u16);
-            bus.write8(target, val);
+            bus.write(target, val);
 
             let mut cpu = Cpu::new();
             cpu.y = val;
@@ -1094,9 +1114,9 @@ mod tests {
             let base = (base_hi as u16) << 8 | (base_lo as u16);
             let mut bus = Bus::new(0x8000, vec![LDA_IZX, 0x04]);
 
-            bus.write8(0x14, base_lo);
-            bus.write8(0x15, base_hi);
-            bus.write8(base, val);
+            bus.write(0x14, base_lo);
+            bus.write(0x15, base_hi);
+            bus.write(base, val);
 
             let mut cpu = Cpu::new();
             cpu.x = 0x10;
@@ -1121,9 +1141,9 @@ mod tests {
             let base = (base_hi as u16) << 8 | (base_lo as u16);
             let mut bus = Bus::new(0x8000, vec![LDA_IZY, 0x14]);
 
-            bus.write8(0x14, base_lo);
-            bus.write8(0x15, base_hi);
-            bus.write8(base.wrapping_add(y as u16), val);
+            bus.write(0x14, base_lo);
+            bus.write(0x15, base_hi);
+            bus.write(base.wrapping_add(y as u16), val);
 
             let mut cpu = Cpu::new();
             cpu.y = y;
@@ -1147,7 +1167,7 @@ mod tests {
             cpu.a = val;
             let cycles = cpu.step(&mut bus);
 
-            assert_eq!(bus.read8(val as u16), val);
+            assert_eq!(bus.read(val as u16), val);
             assert_eq!(cpu.pc - 0x8000, 2);
             assert_eq!(cycles, 3);
         }
@@ -1163,7 +1183,7 @@ mod tests {
             cpu.a = val;
             let cycles = cpu.step(&mut bus);
 
-            assert_eq!(bus.read8(val.wrapping_add(0xf0) as u16), val);
+            assert_eq!(bus.read(val.wrapping_add(0xf0) as u16), val);
             assert_eq!(cpu.pc - 0x8000, 2);
             assert_eq!(cycles, 4);
         }
@@ -1177,7 +1197,7 @@ mod tests {
             cpu.a = val;
             let cycles = cpu.step(&mut bus);
 
-            assert_eq!(bus.read8(0x150f), val);
+            assert_eq!(bus.read(0x150f), val);
             assert_eq!(cpu.pc - 0x8000, 3);
             assert_eq!(cycles, 4);
         }
@@ -1197,7 +1217,7 @@ mod tests {
             cpu.a = val;
             let cycles = cpu.step(&mut bus);
 
-            assert_eq!(bus.read8(target), val);
+            assert_eq!(bus.read(target), val);
             assert_eq!(cpu.pc - 0x8000, 3);
             assert_eq!(
                 cycles,
@@ -1224,7 +1244,7 @@ mod tests {
             cpu.a = val;
             let cycles = cpu.step(&mut bus);
 
-            assert_eq!(bus.read8(target), val);
+            assert_eq!(bus.read(target), val);
             assert_eq!(cpu.pc - 0x8000, 3);
             assert_eq!(
                 cycles,
@@ -1258,7 +1278,7 @@ mod tests {
     fn test_ldx_zero_page() {
         for val in 0..=255 {
             let mut bus = Bus::new(0x8000, vec![LDX_ZP, 0x14]);
-            bus.write8(0x14, val);
+            bus.write(0x14, val);
 
             let mut cpu = Cpu::new();
             let cycles = cpu.step(&mut bus);
@@ -1276,7 +1296,7 @@ mod tests {
     fn test_ldx_zero_page_y() {
         for val in 0..=255 {
             let mut bus = Bus::new(0x8000, vec![LDX_ZPY, 0x05]);
-            bus.write8(0x04, val);
+            bus.write(0x04, val);
 
             let mut cpu = Cpu::new();
             cpu.y = 0xFF;
@@ -1295,7 +1315,7 @@ mod tests {
     fn test_ldx_absolute() {
         for val in 0..=255 {
             let mut bus = Bus::new(0x8000, vec![LDX_ABS, 0x05, 0x02]);
-            bus.write8(0x0205, val);
+            bus.write(0x0205, val);
 
             let mut cpu = Cpu::new();
             let cycles = cpu.step(&mut bus);
@@ -1317,7 +1337,7 @@ mod tests {
             let base = (base_hi as u16) << 8 | (base_lo as u16);
             let mut bus = Bus::new(0x8000, vec![LDX_ABY, base_lo, base_hi]);
             let target = base.wrapping_add(val as u16);
-            bus.write8(target, val);
+            bus.write(target, val);
 
             let mut cpu = Cpu::new();
             cpu.y = val;
@@ -1347,7 +1367,7 @@ mod tests {
             cpu.x = val;
             let cycles = cpu.step(&mut bus);
 
-            assert_eq!(bus.read8(val as u16), val);
+            assert_eq!(bus.read(val as u16), val);
             assert_eq!(cpu.pc - 0x8000, 2);
             assert_eq!(cycles, 3);
         }
@@ -1362,7 +1382,7 @@ mod tests {
             cpu.x = 0xFF;
             let cycles = cpu.step(&mut bus);
 
-            assert_eq!(cpu.x, bus.read8(cpu.y.wrapping_add(0x05) as u16));
+            assert_eq!(cpu.x, bus.read(cpu.y.wrapping_add(0x05) as u16));
             assert_eq!(cpu.pc - 0x8000, 2);
             assert_eq!(cycles, 4);
         }
@@ -1377,7 +1397,7 @@ mod tests {
             cpu.x = val;
             let cycles = cpu.step(&mut bus);
 
-            assert_eq!(cpu.x, bus.read8(0xf005));
+            assert_eq!(cpu.x, bus.read(0xf005));
             assert_eq!(cpu.pc - 0x8000, 3);
             assert_eq!(cycles, 4);
         }
@@ -1392,7 +1412,7 @@ mod tests {
             cpu.y = val;
             let cycles = cpu.step(&mut bus);
 
-            assert_eq!(bus.read8(val as u16), val);
+            assert_eq!(bus.read(val as u16), val);
             assert_eq!(cpu.pc - 0x8000, 2);
             assert_eq!(cycles, 3);
         }
@@ -1407,7 +1427,7 @@ mod tests {
             cpu.y = 0xFF;
             let cycles = cpu.step(&mut bus);
 
-            assert_eq!(cpu.y, bus.read8(cpu.x.wrapping_add(0x05) as u16));
+            assert_eq!(cpu.y, bus.read(cpu.x.wrapping_add(0x05) as u16));
             assert_eq!(cpu.pc - 0x8000, 2);
             assert_eq!(cycles, 4);
         }
@@ -1422,7 +1442,7 @@ mod tests {
             cpu.y = val;
             let cycles = cpu.step(&mut bus);
 
-            assert_eq!(cpu.y, bus.read8(0xf005));
+            assert_eq!(cpu.y, bus.read(0xf005));
             assert_eq!(cpu.pc - 0x8000, 3);
             assert_eq!(cycles, 4);
         }
@@ -1449,7 +1469,7 @@ mod tests {
     fn test_ldy_zero_page() {
         for val in 0..=255 {
             let mut bus = Bus::new(0x8000, vec![LDY_ZP, 0x14]);
-            bus.write8(0x14, val);
+            bus.write(0x14, val);
 
             let mut cpu = Cpu::new();
             let cycles = cpu.step(&mut bus);
@@ -1467,7 +1487,7 @@ mod tests {
     fn test_ldy_zero_page_x() {
         for val in 0..=255 {
             let mut bus = Bus::new(0x8000, vec![LDY_ZPX, 0x05]);
-            bus.write8(0x04, val);
+            bus.write(0x04, val);
 
             let mut cpu = Cpu::new();
             cpu.x = 0xFF;
@@ -1486,7 +1506,7 @@ mod tests {
     fn test_ldy_absolute() {
         for val in 0..=255 {
             let mut bus = Bus::new(0x8000, vec![LDY_ABS, 0x05, 0x02]);
-            bus.write8(0x0205, val);
+            bus.write(0x0205, val);
 
             let mut cpu = Cpu::new();
             let cycles = cpu.step(&mut bus);
@@ -1508,7 +1528,7 @@ mod tests {
             let base = (base_hi as u16) << 8 | (base_lo as u16);
             let mut bus = Bus::new(0x8000, vec![LDY_ABX, base_lo, base_hi]);
             let target = base.wrapping_add(val as u16);
-            bus.write8(target, val);
+            bus.write(target, val);
 
             let mut cpu = Cpu::new();
             cpu.x = val;
@@ -1627,13 +1647,13 @@ mod tests {
     fn test_pha() {
         for val in 0..=255 {
             let mut bus = Bus::new(0x8000, vec![PHA_IMP]);
-            bus.write8(0x01ff, 0);
+            bus.write(0x01ff, 0);
             let mut cpu = Cpu::new();
             cpu.s = 0xff;
             cpu.a = val;
             let cycles = cpu.step(&mut bus);
 
-            assert_eq!(val, bus.read8(0x1ff));
+            assert_eq!(val, bus.read(0x1ff));
             assert_eq!(cpu.s, 0xfe);
             assert_eq!(cycles, 3);
             assert_eq!(cpu.pc - 0x8000, 1);
@@ -1644,12 +1664,12 @@ mod tests {
     fn test_pla() {
         for val in 0..=255 {
             let mut bus = Bus::new(0x8000, vec![PLA_IMP]);
-            bus.write8(0x01ff, val);
+            bus.write(0x01ff, val);
             let mut cpu = Cpu::new();
             cpu.s = 0xfe;
             let cycles = cpu.step(&mut bus);
 
-            assert_eq!(cpu.a, bus.read8(0x1ff));
+            assert_eq!(cpu.a, bus.read(0x1ff));
             assert_eq!(cpu.s, 0xff);
             assert_eq!(cpu.get_flag(flags::N), (val as i8) < 0);
             assert_eq!(cpu.get_flag(flags::Z), val == 0);
@@ -1662,13 +1682,13 @@ mod tests {
     fn test_php() {
         for val in 0..=255 {
             let mut bus = Bus::new(0x8000, vec![PHP_IMP]);
-            bus.write8(0x01ff, 0);
+            bus.write(0x01ff, 0);
             let mut cpu = Cpu::new();
             cpu.s = 0xff;
             cpu.status = val;
             let cycles = cpu.step(&mut bus);
 
-            let mem_flags = bus.read8(0x1ff);
+            let mem_flags = bus.read(0x1ff);
             assert!(mem_flags & flags::B1 != 0);
             assert!(mem_flags & flags::B2 != 0);
             assert_eq!(val | flags::B1 | flags::B2, mem_flags);
@@ -1682,11 +1702,11 @@ mod tests {
     fn test_plp() {
         for val in 0..=255 {
             let mut bus = Bus::new(0x8000, vec![PLP_IMP]);
-            bus.write8(0x01ff, val);
+            bus.write(0x01ff, val);
             let mut cpu = Cpu::new();
             cpu.s = 0xfe;
             let cycles = cpu.step(&mut bus);
-            let status = bus.read8(0x1ff);
+            let status = bus.read(0x1ff);
             let final_status =
                 (cpu.status & (flags::B1 | flags::B2)) | (status & !(flags::B1 | flags::B2));
             assert_eq!(cpu.status, final_status);
@@ -1700,13 +1720,13 @@ mod tests {
     fn test_stack_wrap_push() {
         for val in 0..=255 {
             let mut bus = Bus::new(0x8000, vec![PHA_IMP]);
-            bus.write8(0x0100, val);
+            bus.write(0x0100, val);
             let mut cpu = Cpu::new();
             cpu.a = val;
             cpu.s = 0x00;
             let cycles = cpu.step(&mut bus);
 
-            assert_eq!(bus.read8(0x0100), val);
+            assert_eq!(bus.read(0x0100), val);
             assert_eq!(cpu.s, 0xff);
             assert_eq!(cycles, 3);
             assert_eq!(cpu.pc - 0x8000, 1);
@@ -1717,7 +1737,7 @@ mod tests {
     fn test_stack_wrap_pull() {
         for val in 0..=255 {
             let mut bus = Bus::new(0x8000, vec![PLA_IMP]);
-            bus.write8(0x0100, val);
+            bus.write(0x0100, val);
             let mut cpu = Cpu::new();
             cpu.s = 0xFF;
             let cycles = cpu.step(&mut bus);
@@ -1781,7 +1801,7 @@ mod tests {
     fn test_ora_zp() {
         for val in 0..=255 {
             let mut bus = Bus::new(0x8000, vec![ORA_ZP, val]);
-            bus.write8(val as u16, val);
+            bus.write(val as u16, val);
             let mut cpu = Cpu::new();
             cpu.a = 0b1010_0101;
             let cycles = cpu.step(&mut bus);
@@ -1801,7 +1821,7 @@ mod tests {
 
             let mut cpu = Cpu::new();
             cpu.x = 0xf0;
-            bus.write8(val.wrapping_add(cpu.x) as u16, !val);
+            bus.write(val.wrapping_add(cpu.x) as u16, !val);
 
             cpu.a = 0b1010_0101;
             let cycles = cpu.step(&mut bus);
@@ -1820,7 +1840,7 @@ mod tests {
             let mut bus = Bus::new(0x8000, vec![ORA_ABS, val, 0xf0]);
 
             let mut cpu = Cpu::new();
-            bus.write8(0xf000 + val as u16, !val);
+            bus.write(0xf000 + val as u16, !val);
 
             cpu.a = 0b1010_0101;
             let cycles = cpu.step(&mut bus);
@@ -1848,7 +1868,7 @@ mod tests {
             let base = u16::from_le_bytes([lo, hi]);
             let target = base.wrapping_add(cpu.x as u16);
             let page_crossed = (base ^ target) & 0xff00 != 0;
-            bus.write8(target, !val);
+            bus.write(target, !val);
 
             let cycles = cpu.step(&mut bus);
 
@@ -1875,7 +1895,7 @@ mod tests {
             let base = u16::from_le_bytes([lo, hi]);
             let target = base.wrapping_add(cpu.y as u16);
             let page_crossed = (base ^ target) & 0xff00 != 0;
-            bus.write8(target, !val);
+            bus.write(target, !val);
 
             let cycles = cpu.step(&mut bus);
 
@@ -1900,12 +1920,12 @@ mod tests {
             cpu.a = 0b1010_0101;
 
             let base = u16::from_le_bytes([lo, hi]);
-            bus.write8(base, !val);
+            bus.write(base, !val);
 
             let target = val.wrapping_add(cpu.x) as u16;
             let target_p1 = val.wrapping_add(cpu.x + 1) as u16;
-            bus.write8(target, lo);
-            bus.write8(target_p1, hi);
+            bus.write(target, lo);
+            bus.write(target_p1, hi);
 
             let cycles = cpu.step(&mut bus);
 
@@ -1933,10 +1953,10 @@ mod tests {
             let target = base.wrapping_add(cpu.y as u16);
             let page_crossed = (base ^ target) & 0xff00 != 0;
 
-            bus.write8(val as u16, lo);
-            bus.write8(val.wrapping_add(1) as u16, hi);
+            bus.write(val as u16, lo);
+            bus.write(val.wrapping_add(1) as u16, hi);
 
-            bus.write8(target, !val);
+            bus.write(target, !val);
 
             let cycles = cpu.step(&mut bus);
 
@@ -1968,7 +1988,7 @@ mod tests {
     fn test_and_zp() {
         for val in 0..=255 {
             let mut bus = Bus::new(0x8000, vec![AND_ZP, val]);
-            bus.write8(val as u16, val);
+            bus.write(val as u16, val);
             let mut cpu = Cpu::new();
             cpu.a = 0b1010_0101;
             let cycles = cpu.step(&mut bus);
@@ -1988,7 +2008,7 @@ mod tests {
 
             let mut cpu = Cpu::new();
             cpu.x = 0xf0;
-            bus.write8(val.wrapping_add(cpu.x) as u16, !val);
+            bus.write(val.wrapping_add(cpu.x) as u16, !val);
 
             cpu.a = 0b1010_0101;
             let cycles = cpu.step(&mut bus);
@@ -2007,7 +2027,7 @@ mod tests {
             let mut bus = Bus::new(0x8000, vec![AND_ABS, val, 0xf0]);
 
             let mut cpu = Cpu::new();
-            bus.write8(0xf000 + val as u16, !val);
+            bus.write(0xf000 + val as u16, !val);
 
             cpu.a = 0b1010_0101;
             let cycles = cpu.step(&mut bus);
@@ -2035,7 +2055,7 @@ mod tests {
             let base = u16::from_le_bytes([lo, hi]);
             let target = base.wrapping_add(cpu.x as u16);
             let page_crossed = (base ^ target) & 0xff00 != 0;
-            bus.write8(target, !val);
+            bus.write(target, !val);
 
             let cycles = cpu.step(&mut bus);
 
@@ -2062,7 +2082,7 @@ mod tests {
             let base = u16::from_le_bytes([lo, hi]);
             let target = base.wrapping_add(cpu.y as u16);
             let page_crossed = (base ^ target) & 0xff00 != 0;
-            bus.write8(target, !val);
+            bus.write(target, !val);
 
             let cycles = cpu.step(&mut bus);
 
@@ -2087,12 +2107,12 @@ mod tests {
             cpu.a = 0b1010_0101;
 
             let base = u16::from_le_bytes([lo, hi]);
-            bus.write8(base, !val);
+            bus.write(base, !val);
 
             let target = val.wrapping_add(cpu.x) as u16;
             let target_p1 = val.wrapping_add(cpu.x + 1) as u16;
-            bus.write8(target, lo);
-            bus.write8(target_p1, hi);
+            bus.write(target, lo);
+            bus.write(target_p1, hi);
 
             let cycles = cpu.step(&mut bus);
 
@@ -2120,10 +2140,10 @@ mod tests {
             let target = base.wrapping_add(cpu.y as u16);
             let page_crossed = (base ^ target) & 0xff00 != 0;
 
-            bus.write8(val as u16, lo);
-            bus.write8(val.wrapping_add(1) as u16, hi);
+            bus.write(val as u16, lo);
+            bus.write(val.wrapping_add(1) as u16, hi);
 
-            bus.write8(target, !val);
+            bus.write(target, !val);
 
             let cycles = cpu.step(&mut bus);
 
@@ -2155,7 +2175,7 @@ mod tests {
     fn test_eor_zp() {
         for val in 0..=255 {
             let mut bus = Bus::new(0x8000, vec![EOR_ZP, val]);
-            bus.write8(val as u16, val);
+            bus.write(val as u16, val);
             let mut cpu = Cpu::new();
             cpu.a = 0b1010_0101;
             let cycles = cpu.step(&mut bus);
@@ -2175,7 +2195,7 @@ mod tests {
 
             let mut cpu = Cpu::new();
             cpu.x = 0xf0;
-            bus.write8(val.wrapping_add(cpu.x) as u16, !val);
+            bus.write(val.wrapping_add(cpu.x) as u16, !val);
 
             cpu.a = 0b1010_0101;
             let cycles = cpu.step(&mut bus);
@@ -2194,7 +2214,7 @@ mod tests {
             let mut bus = Bus::new(0x8000, vec![EOR_ABS, val, 0xf0]);
 
             let mut cpu = Cpu::new();
-            bus.write8(0xf000 + val as u16, !val);
+            bus.write(0xf000 + val as u16, !val);
 
             cpu.a = 0b1010_0101;
             let cycles = cpu.step(&mut bus);
@@ -2222,7 +2242,7 @@ mod tests {
             let base = u16::from_le_bytes([lo, hi]);
             let target = base.wrapping_add(cpu.x as u16);
             let page_crossed = (base ^ target) & 0xff00 != 0;
-            bus.write8(target, !val);
+            bus.write(target, !val);
 
             let cycles = cpu.step(&mut bus);
 
@@ -2249,7 +2269,7 @@ mod tests {
             let base = u16::from_le_bytes([lo, hi]);
             let target = base.wrapping_add(cpu.y as u16);
             let page_crossed = (base ^ target) & 0xff00 != 0;
-            bus.write8(target, !val);
+            bus.write(target, !val);
 
             let cycles = cpu.step(&mut bus);
 
@@ -2274,12 +2294,12 @@ mod tests {
             cpu.a = 0b1010_0101;
 
             let base = u16::from_le_bytes([lo, hi]);
-            bus.write8(base, !val);
+            bus.write(base, !val);
 
             let target = val.wrapping_add(cpu.x) as u16;
             let target_p1 = val.wrapping_add(cpu.x + 1) as u16;
-            bus.write8(target, lo);
-            bus.write8(target_p1, hi);
+            bus.write(target, lo);
+            bus.write(target_p1, hi);
 
             let cycles = cpu.step(&mut bus);
 
@@ -2307,10 +2327,10 @@ mod tests {
             let target = base.wrapping_add(cpu.y as u16);
             let page_crossed = (base ^ target) & 0xff00 != 0;
 
-            bus.write8(val as u16, lo);
-            bus.write8(val.wrapping_add(1) as u16, hi);
+            bus.write(val as u16, lo);
+            bus.write(val.wrapping_add(1) as u16, hi);
 
-            bus.write8(target, !val);
+            bus.write(target, !val);
 
             let cycles = cpu.step(&mut bus);
 
@@ -2712,12 +2732,12 @@ mod tests {
     #[test]
     fn test_dec_abs() {
         let mut bus = Bus::new(0x8000, vec![DEC_ABS, 0x02, 0x03]);
-        bus.write8(0x0302, 12);
+        bus.write(0x0302, 12);
 
         let mut cpu = Cpu::new();
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302), 11);
+        assert_eq!(bus.read(0x0302), 11);
         assert_eq!(cycles, 6);
         assert_eq!(cpu.pc - 0x8000, 3);
     }
@@ -2725,12 +2745,12 @@ mod tests {
     #[test]
     fn test_inc_abs() {
         let mut bus = Bus::new(0x8000, vec![INC_ABS, 0x02, 0x03]);
-        bus.write8(0x0302, 12);
+        bus.write(0x0302, 12);
 
         let mut cpu = Cpu::new();
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302), 13);
+        assert_eq!(bus.read(0x0302), 13);
         assert_eq!(cycles, 6);
         assert_eq!(cpu.pc - 0x8000, 3);
     }
@@ -2770,12 +2790,12 @@ mod tests {
     #[test]
     fn test_asl_abs() {
         let mut bus = Bus::new(0x8000, vec![ASL_ABS, 0x02, 0x03]);
-        bus.write8(0x0302, 0b0100_0000);
+        bus.write(0x0302, 0b0100_0000);
 
         let mut cpu = Cpu::new();
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302), 0b1000_0000);
+        assert_eq!(bus.read(0x0302), 0b1000_0000);
         assert_eq!(cpu.get_flag(flags::C), false);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), true);
@@ -2786,12 +2806,12 @@ mod tests {
     #[test]
     fn test_asl_abs_carry() {
         let mut bus = Bus::new(0x8000, vec![ASL_ABS, 0x02, 0x03]);
-        bus.write8(0x0302, 0b1000_0000);
+        bus.write(0x0302, 0b1000_0000);
 
         let mut cpu = Cpu::new();
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302), 0b0000_0000);
+        assert_eq!(bus.read(0x0302), 0b0000_0000);
         assert_eq!(cpu.get_flag(flags::C), true);
         assert_eq!(cpu.get_flag(flags::Z), true);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2802,12 +2822,12 @@ mod tests {
     #[test]
     fn test_asl_abs_pattern() {
         let mut bus = Bus::new(0x8000, vec![ASL_ABS, 0x02, 0x03]);
-        bus.write8(0x0302, 0b0010_1010);
+        bus.write(0x0302, 0b0010_1010);
 
         let mut cpu = Cpu::new();
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302), 0b0101_0100);
+        assert_eq!(bus.read(0x0302), 0b0101_0100);
         assert_eq!(cpu.get_flag(flags::C), false);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2818,13 +2838,13 @@ mod tests {
     #[test]
     fn test_rol_abs() {
         let mut bus = Bus::new(0x8000, vec![ROL_ABS, 0x02, 0x03]);
-        bus.write8(0x0302, 0b0100_0000);
+        bus.write(0x0302, 0b0100_0000);
 
         let mut cpu = Cpu::new();
         cpu.set_flag(flags::C, true);
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302), 0b1000_0001);
+        assert_eq!(bus.read(0x0302), 0b1000_0001);
         assert_eq!(cpu.get_flag(flags::C), false);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), true);
@@ -2835,12 +2855,12 @@ mod tests {
     #[test]
     fn test_rol_abs_carry_out() {
         let mut bus = Bus::new(0x8000, vec![ROL_ABS, 0x02, 0x03]);
-        bus.write8(0x0302, 0b1000_0000);
+        bus.write(0x0302, 0b1000_0000);
 
         let mut cpu = Cpu::new();
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302), 0b0000_0000);
+        assert_eq!(bus.read(0x0302), 0b0000_0000);
         assert_eq!(cpu.get_flag(flags::C), true);
         assert_eq!(cpu.get_flag(flags::Z), true);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2851,13 +2871,13 @@ mod tests {
     #[test]
     fn test_rol_abs_carry_in_out() {
         let mut bus = Bus::new(0x8000, vec![ROL_ABS, 0x02, 0x03]);
-        bus.write8(0x0302, 0b1000_0000);
+        bus.write(0x0302, 0b1000_0000);
 
         let mut cpu = Cpu::new();
         cpu.set_flag(flags::C, true);
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302), 0b0000_0001);
+        assert_eq!(bus.read(0x0302), 0b0000_0001);
         assert_eq!(cpu.get_flag(flags::C), true);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2868,13 +2888,13 @@ mod tests {
     #[test]
     fn test_rol_abs_pattern() {
         let mut bus = Bus::new(0x8000, vec![ROL_ABS, 0x02, 0x03]);
-        bus.write8(0x0302, 0b0010_1010);
+        bus.write(0x0302, 0b0010_1010);
 
         let mut cpu = Cpu::new();
         cpu.set_flag(flags::C, true);
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302), 0b0101_0101);
+        assert_eq!(bus.read(0x0302), 0b0101_0101);
         assert_eq!(cpu.get_flag(flags::C), false);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2901,12 +2921,12 @@ mod tests {
     #[test]
     fn test_lsr_abs() {
         let mut bus = Bus::new(0x8000, vec![LSR_ABS, 0x02, 0x03]);
-        bus.write8(0x0302, 0b0100_0000);
+        bus.write(0x0302, 0b0100_0000);
 
         let mut cpu = Cpu::new();
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302), 0b0010_0000);
+        assert_eq!(bus.read(0x0302), 0b0010_0000);
         assert_eq!(cpu.get_flag(flags::C), false);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2917,12 +2937,12 @@ mod tests {
     #[test]
     fn test_lsr_abs_carry() {
         let mut bus = Bus::new(0x8000, vec![LSR_ABS, 0x02, 0x03]);
-        bus.write8(0x0302, 0b0000_0001);
+        bus.write(0x0302, 0b0000_0001);
 
         let mut cpu = Cpu::new();
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302), 0b0000_0000);
+        assert_eq!(bus.read(0x0302), 0b0000_0000);
         assert_eq!(cpu.get_flag(flags::C), true);
         assert_eq!(cpu.get_flag(flags::Z), true);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2933,12 +2953,12 @@ mod tests {
     #[test]
     fn test_lsr_abs_pattern() {
         let mut bus = Bus::new(0x8000, vec![LSR_ABS, 0x02, 0x03]);
-        bus.write8(0x0302, 0b0010_1010);
+        bus.write(0x0302, 0b0010_1010);
 
         let mut cpu = Cpu::new();
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302), 0b0001_0101);
+        assert_eq!(bus.read(0x0302), 0b0001_0101);
         assert_eq!(cpu.get_flag(flags::C), false);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2949,13 +2969,13 @@ mod tests {
     #[test]
     fn test_ror_abs() {
         let mut bus = Bus::new(0x8000, vec![ROR_ABS, 0x02, 0x03]);
-        bus.write8(0x0302, 0b0100_0000);
+        bus.write(0x0302, 0b0100_0000);
 
         let mut cpu = Cpu::new();
         cpu.set_flag(flags::C, true);
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302), 0b1010_0000);
+        assert_eq!(bus.read(0x0302), 0b1010_0000);
         assert_eq!(cpu.get_flag(flags::C), false);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), true);
@@ -2966,12 +2986,12 @@ mod tests {
     #[test]
     fn test_ror_abs_carry_out() {
         let mut bus = Bus::new(0x8000, vec![ROR_ABS, 0x02, 0x03]);
-        bus.write8(0x0302, 0b0000_0001);
+        bus.write(0x0302, 0b0000_0001);
 
         let mut cpu = Cpu::new();
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302), 0b0000_0000);
+        assert_eq!(bus.read(0x0302), 0b0000_0000);
         assert_eq!(cpu.get_flag(flags::C), true);
         assert_eq!(cpu.get_flag(flags::Z), true);
         assert_eq!(cpu.get_flag(flags::N), false);
@@ -2982,13 +3002,13 @@ mod tests {
     #[test]
     fn test_ror_abs_carry_in_out() {
         let mut bus = Bus::new(0x8000, vec![ROR_ABS, 0x02, 0x03]);
-        bus.write8(0x0302, 0b1000_0001);
+        bus.write(0x0302, 0b1000_0001);
 
         let mut cpu = Cpu::new();
         cpu.set_flag(flags::C, true);
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302), 0b1100_0000);
+        assert_eq!(bus.read(0x0302), 0b1100_0000);
         assert_eq!(cpu.get_flag(flags::C), true);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), true);
@@ -2999,13 +3019,13 @@ mod tests {
     #[test]
     fn test_ror_abs_pattern() {
         let mut bus = Bus::new(0x8000, vec![ROR_ABS, 0x02, 0x03]);
-        bus.write8(0x0302, 0b0010_1010);
+        bus.write(0x0302, 0b0010_1010);
 
         let mut cpu = Cpu::new();
         cpu.set_flag(flags::C, true);
         let cycles = cpu.step(&mut bus);
 
-        assert_eq!(bus.read8(0x0302), 0b1001_0101);
+        assert_eq!(bus.read(0x0302), 0b1001_0101);
         assert_eq!(cpu.get_flag(flags::C), false);
         assert_eq!(cpu.get_flag(flags::Z), false);
         assert_eq!(cpu.get_flag(flags::N), true);
@@ -3306,8 +3326,8 @@ mod tests {
         let start_flags = 0b1110_1011;
 
         let mut bus = Bus::new(0x8123, vec![BRK_IMP]);
-        bus.write8(vectors::IRQ, 0x34);
-        bus.write8(vectors::IRQ.wrapping_add(1), 0x12);
+        bus.write(vectors::IRQ, 0x34);
+        bus.write(vectors::IRQ.wrapping_add(1), 0x12);
 
         let mut cpu = Cpu::new();
         cpu.s = 0xff;
@@ -3316,11 +3336,11 @@ mod tests {
         let cycles = cpu.step(&mut bus);
 
         assert_eq!(
-            bus.read8(0x0100 + cpu.s.wrapping_add(1) as u16),
+            bus.read(0x0100 + cpu.s.wrapping_add(1) as u16),
             start_flags | flags::B1 | flags::B2
         );
-        assert_eq!(bus.read8(0x0100 + cpu.s.wrapping_add(2) as u16), 0x24);
-        assert_eq!(bus.read8(0x0100 + cpu.s.wrapping_add(3) as u16), 0x81);
+        assert_eq!(bus.read(0x0100 + cpu.s.wrapping_add(2) as u16), 0x24);
+        assert_eq!(bus.read(0x0100 + cpu.s.wrapping_add(3) as u16), 0x81);
         assert_eq!(cpu.pc, 0x1234);
         assert_eq!(cpu.get_flag(flags::I), true);
         assert_eq!(cycles, 7);
@@ -3331,9 +3351,9 @@ mod tests {
         let start_flags = 0b1110_1011;
 
         let mut bus = Bus::new(0x8123, vec![BRK_IMP]);
-        bus.write8(vectors::IRQ, 0x34);
-        bus.write8(vectors::IRQ.wrapping_add(1), 0x12);
-        bus.write8(0x1234, RTI_IMP);
+        bus.write(vectors::IRQ, 0x34);
+        bus.write(vectors::IRQ.wrapping_add(1), 0x12);
+        bus.write(0x1234, RTI_IMP);
 
         let mut cpu = Cpu::new();
         cpu.s = 0xff;
@@ -3350,7 +3370,7 @@ mod tests {
     #[test]
     fn test_jsr_rts() {
         let mut bus = Bus::new(0x8122, vec![JSR_ABS, 0x21, 0x83]);
-        bus.write8(0x8321, RTS_IMP);
+        bus.write(0x8321, RTS_IMP);
 
         let mut cpu = Cpu::new();
         cpu.s = 0xff;
@@ -3359,8 +3379,8 @@ mod tests {
 
         assert_eq!(cpu.pc, 0x8321);
         assert_eq!(cpu.s, 0xFD);
-        assert_eq!(bus.read8(0x0100 + cpu.s.wrapping_add(1) as u16), 0x24);
-        assert_eq!(bus.read8(0x0100 + cpu.s.wrapping_add(2) as u16), 0x81);
+        assert_eq!(bus.read(0x0100 + cpu.s.wrapping_add(1) as u16), 0x24);
+        assert_eq!(bus.read(0x0100 + cpu.s.wrapping_add(2) as u16), 0x81);
         assert_eq!(cycles_jsr, 6);
 
         let cycles_rts = cpu.step(&mut bus);
@@ -3384,8 +3404,8 @@ mod tests {
     #[test]
     fn test_jmp_indirect() {
         let mut bus = Bus::new(0x8122, vec![JMP_IND, 0x21, 0x83]);
-        bus.write8(0x8321, 0x44);
-        bus.write8(0x8322, 0x55);
+        bus.write(0x8321, 0x44);
+        bus.write(0x8322, 0x55);
 
         let mut cpu = Cpu::new();
         cpu.pc = 0x8122;
@@ -3398,8 +3418,8 @@ mod tests {
     #[test]
     fn test_jmp_indirect_bug() {
         let mut bus = Bus::new(0x8122, vec![JMP_IND, 0xFF, 0x83]);
-        bus.write8(0x83FF, 0x44);
-        bus.write8(0x8300, 0x55);
+        bus.write(0x83FF, 0x44);
+        bus.write(0x8300, 0x55);
 
         let mut cpu = Cpu::new();
         cpu.pc = 0x8122;
@@ -3412,7 +3432,7 @@ mod tests {
     #[test]
     fn test_bit_1() {
         let mut bus = Bus::new(0x8000, vec![BIT_ABS, 0x0F, 0x83]);
-        bus.write8(0x830F, 0b0000_0000);
+        bus.write(0x830F, 0b0000_0000);
 
         let a = 0b0000_0000;
         let mut cpu = Cpu::new();
@@ -3430,7 +3450,7 @@ mod tests {
     #[test]
     fn test_bit_2() {
         let mut bus = Bus::new(0x8000, vec![BIT_ABS, 0x0F, 0x83]);
-        bus.write8(0x830F, 0b1000_0000);
+        bus.write(0x830F, 0b1000_0000);
 
         let a = 0b0000_0000;
         let mut cpu = Cpu::new();
@@ -3447,7 +3467,7 @@ mod tests {
     #[test]
     fn test_bit_3() {
         let mut bus = Bus::new(0x8000, vec![BIT_ABS, 0x0F, 0x83]);
-        bus.write8(0x830F, 0b0100_0000);
+        bus.write(0x830F, 0b0100_0000);
 
         let a = 0b0000_0000;
         let mut cpu = Cpu::new();
@@ -3465,7 +3485,7 @@ mod tests {
     #[test]
     fn test_bit_4() {
         let mut bus = Bus::new(0x8000, vec![BIT_ABS, 0x0F, 0x83]);
-        bus.write8(0x830F, 0b0010_0100);
+        bus.write(0x830F, 0b0010_0100);
 
         let a = 0b0000_0101;
         let mut cpu = Cpu::new();
@@ -3537,35 +3557,4 @@ mod tests {
         assert_eq!(cpu.pc, 0x8001);
         assert_eq!(cycles, 2);
     }
-
-    // #[test]
-    // fn test_prg_1() {
-    //     // C000  4C F5 C5  JMP $C5F5                       A:00 X:00 Y:00 P:24 SP:FD PPU:  0, 21 CYC:7
-    //     // C5F5  A2 00     LDX #$00                        A:00 X:00 Y:00 P:24 SP:FD PPU:  0, 30 CYC:10
-    //     // C5F7  86 00     STX $00 = 00                    A:00 X:00 Y:00 P:26 SP:FD PPU:  0, 36 CYC:12
-    //     // C5F9  86 10     STX $10 = 00                    A:00 X:00 Y:00 P:26 SP:FD PPU:  0, 45 CYC:15
-    //     // C5FB  86 11     STX $11 = 00                    A:00 X:00 Y:00 P:26 SP:FD PPU:  0, 54 CYC:18
-    //     let mut bus = Bus::new(
-    //         0xC000,
-    //         vec![
-    //             0x4C, 0xF5,
-    //             0xC5, // C000  4C F5 C5  JMP $C5F5                       A:00 X:00 Y:00 P:24 SP:FD
-    //             0xA2,
-    //             0x00, // C5F5  A2 00     LDX #$00                        A:00 X:00 Y:00 P:24 SP:FD
-    //             0x86,
-    //             0x00, // C5F7  86 00     STX $00 = 00                    A:00 X:00 Y:00 P:26 SP:FD
-    //             0x86,
-    //             0x10, // C5F9  86 10     STX $10 = 00                    A:00 X:00 Y:00 P:26 SP:FD
-    //             0x86,
-    //             0x11, // C5FB  86 11     STX $11 = 00                    A:00 X:00 Y:00 P:26 SP:FD
-    //         ],
-    //     );
-
-    //     let mut cpu = Cpu::new();
-    //     cpu.pc = 0xC000;
-    //     let cycles = cpu.step(&mut bus);
-
-    //     assert_eq!(cpu.pc, 0x8001);
-    //     assert_eq!(cycles, 2);
-    // }
 }

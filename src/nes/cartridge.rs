@@ -1,133 +1,76 @@
+use std::fs::File;
+use std::io::prelude::*;
+
+use super::mappers::Mapper;
+use super::mappers::MapperZero;
+
 const NES_TAG: [u8; 4] = [0x4E, 0x45, 0x53, 0x1A];
-const PRG_ROM_PAGE_SIZE: usize = 16384;
-const CHR_ROM_PAGE_SIZE: usize = 8192;
+const PRG_BANK_SIZE: usize = 0x4000;
+const CHR_BANK_SIZE: usize = 0x2000;
 
 #[derive(Debug, PartialEq)]
 pub enum Mirroring {
-    VERTICAL,
-    HORIZONTAL,
-    FOUR_SCREEN,
+    Vertical,
+    Horizontal,
+    FourScreen,
 }
 
-pub struct Rom {
-    pub prg_rom: Vec<u8>,
-    pub chr_rom: Vec<u8>,
-    pub mapper: u8,
-    pub screen_mirroring: Mirroring,
+pub struct Cartridge {
+    mapper: Box<dyn Mapper>,
 }
 
-impl Rom {
-    pub fn new2(base: usize, raw: &Vec<u8>) -> Self {
-        let mut code = [0; 64 * 1024];
+impl Cartridge {
+    pub fn new(path: &str) -> Result<Self, String> {
+        if let Ok(ref mut file) = File::open(path) {
+            let mut raw = Vec::new();
 
-        for (i, &v) in raw.iter().enumerate() {
-            code[i + base] = v;
+            if let Ok(_) = file.read_to_end(&mut raw) {
+                if &raw[0..4] != NES_TAG {
+                    return Err("File is not in iNES file format".to_string());
+                }
+
+                let ines_ver = (raw[7] >> 2) & 0b11;
+                if ines_ver != 0 {
+                    return Err("NES2.0 is not supported".to_string());
+                }
+
+                let four_screen = raw[6] & 0b1000 != 0;
+                let vertical_mirroring = raw[6] & 0b1 != 0;
+                let screen_mirroring = match (four_screen, vertical_mirroring) {
+                    (true, _) => Mirroring::FourScreen,
+                    (false, true) => Mirroring::Vertical,
+                    (false, false) => Mirroring::Horizontal,
+                };
+
+                let prg_rom_size = raw[4] as usize * PRG_BANK_SIZE;
+                let chr_rom_size = raw[5] as usize * CHR_BANK_SIZE;
+                let skip_trainer = raw[6] & 0b100 != 0;
+
+                let prg_rom_start = 16 + if skip_trainer { 512 } else { 0 };
+                let chr_rom_start = prg_rom_start + prg_rom_size;
+
+                let prg_rom = raw[prg_rom_start..(prg_rom_start + prg_rom_size)].to_vec();
+                let chr_rom = raw[chr_rom_start..(chr_rom_start + chr_rom_size)].to_vec();
+
+                let mapper = match (raw[7] & 0b1111_0000) | (raw[6] >> 4) {
+                    0 => MapperZero::new(prg_rom, chr_rom),
+                    m => return Err(format!("Mapper {} is not supported", m)),
+                };
+
+                return Ok(Cartridge {
+                    mapper: Box::new(mapper),
+                });
+            }
         }
 
-        Self {
-            prg_rom: code.to_vec(),
-            chr_rom: vec![],
-            mapper: 0,
-            screen_mirroring: Mirroring::VERTICAL,
-        }
+        Err(String::from("Couldn't read from rom file"))
     }
 
-    pub fn new(raw: &Vec<u8>) -> Result<Rom, String> {
-        if &raw[0..4] != NES_TAG {
-            return Err("File is not in iNES file format".to_string());
-        }
-
-        let mapper = (raw[7] & 0b1111_0000) | (raw[6] >> 4);
-
-        let ines_ver = (raw[7] >> 2) & 0b11;
-        if ines_ver != 0 {
-            return Err("NES2.0 format is not supported".to_string());
-        }
-
-        let four_screen = raw[6] & 0b1000 != 0;
-        let vertical_mirroring = raw[6] & 0b1 != 0;
-        let screen_mirroring = match (four_screen, vertical_mirroring) {
-            (true, _) => Mirroring::FOUR_SCREEN,
-            (false, true) => Mirroring::VERTICAL,
-            (false, false) => Mirroring::HORIZONTAL,
-        };
-
-        let prg_rom_size = raw[4] as usize * PRG_ROM_PAGE_SIZE;
-        let chr_rom_size = raw[5] as usize * CHR_ROM_PAGE_SIZE;
-
-        let skip_trainer = raw[6] & 0b100 != 0;
-
-        let prg_rom_start = 16 + if skip_trainer { 512 } else { 0 };
-        let chr_rom_start = prg_rom_start + prg_rom_size;
-
-        Ok(Rom {
-            prg_rom: raw[prg_rom_start..(prg_rom_start + prg_rom_size)].to_vec(),
-            chr_rom: raw[chr_rom_start..(chr_rom_start + chr_rom_size)].to_vec(),
-            mapper: mapper,
-            screen_mirroring: screen_mirroring,
-        })
-    }
-}
-
-#[cfg(test)]
-pub mod test {
-
-    use super::*;
-
-    struct TestRom {
-        header: Vec<u8>,
-        trainer: Option<Vec<u8>>,
-        pgp_rom: Vec<u8>,
-        chr_rom: Vec<u8>,
+    pub fn read_cpu(&self, addr: u16) -> Option<u8> {
+        self.mapper.read_cpu(addr)
     }
 
-    fn create_rom(rom: TestRom) -> Vec<u8> {
-        let mut result = Vec::with_capacity(
-            rom.header.len()
-                + rom.trainer.as_ref().map_or(0, |t| t.len())
-                + rom.pgp_rom.len()
-                + rom.chr_rom.len(),
-        );
-
-        result.extend(&rom.header);
-        if let Some(t) = rom.trainer {
-            result.extend(t);
-        }
-        result.extend(&rom.pgp_rom);
-        result.extend(&rom.chr_rom);
-
-        result
-    }
-
-    pub fn test_rom() -> Rom {
-        let test_rom = create_rom(TestRom {
-            header: vec![
-                0x4E, 0x45, 0x53, 0x1A, 0x02, 0x01, 0x31, 00, 00, 00, 00, 00, 00, 00, 00, 00,
-            ],
-            trainer: None,
-            pgp_rom: vec![1; 2 * PRG_ROM_PAGE_SIZE],
-            chr_rom: vec![2; 1 * CHR_ROM_PAGE_SIZE],
-        });
-
-        Rom::new(&test_rom).unwrap()
-    }
-
-    #[test]
-    fn test() {
-        let test_rom = create_rom(TestRom {
-            header: vec![
-                0x4E, 0x45, 0x53, 0x1A, 0x02, 0x01, 0x31, 00, 00, 00, 00, 00, 00, 00, 00, 00,
-            ],
-            trainer: None,
-            pgp_rom: vec![1; 2 * PRG_ROM_PAGE_SIZE],
-            chr_rom: vec![2; 1 * CHR_ROM_PAGE_SIZE],
-        });
-
-        let rom: Rom = Rom::new(&test_rom).unwrap();
-
-        assert_eq!(rom.chr_rom, vec!(2; 1 * CHR_ROM_PAGE_SIZE));
-        assert_eq!(rom.prg_rom, vec!(1; 2 * PRG_ROM_PAGE_SIZE));
-        assert_eq!(rom.mapper, 3);
-        assert_eq!(rom.screen_mirroring, Mirroring::VERTICAL);
+    pub fn read_ppu(&self, addr: u16) -> Option<u8> {
+        self.mapper.read_ppu(addr)
     }
 }

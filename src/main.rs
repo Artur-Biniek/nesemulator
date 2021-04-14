@@ -1,171 +1,146 @@
 mod nes;
 
-use nes::bus::Bus;
-use nes::bus::Memory;
-use nes::cpu::Cpu;
-
-use rand::Rng;
-
-use nes::cartridge::Rom;
+use nes::Cartridge;
+use nes::Console;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::pixels::PixelFormatEnum;
-use sdl2::EventPump;
-
-fn handle_user_input(cpu: &mut Bus, event_pump: &mut EventPump) {
-    for event in event_pump.poll_iter() {
-        match event {
-            Event::Quit { .. }
-            | Event::KeyDown {
-                keycode: Some(Keycode::Escape),
-                ..
-            } => std::process::exit(0),
-            Event::KeyDown {
-                keycode: Some(Keycode::W),
-                ..
-            } => {
-                cpu.write8(0xff, 0x77);
-            }
-            Event::KeyDown {
-                keycode: Some(Keycode::S),
-                ..
-            } => {
-                cpu.write8(0xff, 0x73);
-            }
-            Event::KeyDown {
-                keycode: Some(Keycode::A),
-                ..
-            } => {
-                cpu.write8(0xff, 0x61);
-            }
-            Event::KeyDown {
-                keycode: Some(Keycode::D),
-                ..
-            } => {
-                cpu.write8(0xff, 0x64);
-            }
-            _ => { /* do nothing */ }
-        }
-    }
-}
-
-fn color(byte: u8) -> Color {
-    match byte {
-        0 => sdl2::pixels::Color::BLACK,
-        1 => sdl2::pixels::Color::WHITE,
-        2 | 9 => sdl2::pixels::Color::GREY,
-        3 | 10 => sdl2::pixels::Color::RED,
-        4 | 11 => sdl2::pixels::Color::GREEN,
-        5 | 12 => sdl2::pixels::Color::BLUE,
-        6 | 13 => sdl2::pixels::Color::MAGENTA,
-        7 | 14 => sdl2::pixels::Color::YELLOW,
-        _ => sdl2::pixels::Color::CYAN,
-    }
-}
-
-fn read_screen_state(cpu: &Bus, frame: &mut [u8; 32 * 3 * 32]) -> bool {
-    let mut frame_idx = 0;
-    let mut update = false;
-    for i in 0x0200..0x600 {
-        let color_idx = cpu.read8(i as u16);
-        let (b1, b2, b3) = color(color_idx).rgb();
-        if frame[frame_idx] != b1 || frame[frame_idx + 1] != b2 || frame[frame_idx + 2] != b3 {
-            frame[frame_idx] = b1;
-            frame[frame_idx + 1] = b2;
-            frame[frame_idx + 2] = b3;
-            update = true;
-        }
-        frame_idx += 3;
-    }
-    update
-}
+use sdl2::rect::Rect;
+use sdl2::render::WindowCanvas;
+use std::time::Duration;
 
 fn test() {
-    let bytes: Vec<u8> = std::fs::read("nestest.nes").unwrap();
-    let rom = Rom::new(&bytes).unwrap();
+    let cartridge = Cartridge::new("nestest.nes").unwrap();
 
-    let mut cpu = Cpu::new();
-    let mut bus = Bus::new(rom);
-
-    cpu.reset(&mut bus);
-    cpu.pc = 0xc000;
-
-    for i in 1..=9003 {
-        cpu.dump(&bus);
-        cpu.step(&mut bus);
+    let mut console = Console::new(cartridge);
+    console.reset(Some(0xc000));
+    //console.reset(None);
+    loop {
+        console.clock();
     }
 }
 
-fn main() {
-    //test();
+// fn render(canvas: &mut WindowCanvas, color: Color) {
+//     canvas.set_draw_color(color);
+//     canvas.clear();
+//     canvas.present();
+// }
 
-    // init sdl2
-    let sdl_context = sdl2::init().unwrap();
-    let video_subsystem = sdl_context.video().unwrap();
+fn main() -> Result<(), String> {
+    test();
+
+    return Ok(());
+
+    let sdl_context = sdl2::init()?;
+    let video_subsystem = sdl_context.video()?;
+
     let window = video_subsystem
-        .window("Snake game", (32.0 * 10.0) as u32, (32.0 * 10.0) as u32)
+        .window("nes", 800, 600)
         .position_centered()
         .build()
-        .unwrap();
+        .expect("could not initialize video subsystem");
 
-    let mut canvas = window.into_canvas().present_vsync().build().unwrap();
-    let mut event_pump = sdl_context.event_pump().unwrap();
-    canvas.set_scale(10.0, 10.0).unwrap();
+    let mut canvas = window
+        .into_canvas()
+        .build()
+        .expect("could not make a canvas");
 
     let creator = canvas.texture_creator();
     let mut texture = creator
-        .create_texture_target(PixelFormatEnum::RGB24, 32, 32)
+        .create_texture_target(PixelFormatEnum::RGB24, 128, 128)
         .unwrap();
 
-    let mut screen_state = [0 as u8; 32 * 3 * 32];
+    //let cart = Cartridge::new("nestest.nes").unwrap();
+    let cart = Cartridge::new("smb.nes").unwrap();
 
-    let mut rng = rand::thread_rng();
+    let mut screen_state = [155 as u8; 128 * 128 * 3];
 
-    let code = vec![
-        0x20, 0x06, 0x86, 0x20, 0x38, 0x86, 0x20, 0x0d, 0x86, 0x20, 0x2a, 0x86, 0x60, 0xa9, 0x02,
-        0x85, 0x02, 0xa9, 0x06, 0x85, 0x03, 0xa9, 0x11, 0x85, 0x10, 0xa9, 0x10, 0x85, 0x12, 0xa9,
-        0x0f, 0x85, 0x14, 0xa9, 0x04, 0x85, 0x11, 0x85, 0x13, 0x85, 0x15, 0x60, 0xa5, 0xfe, 0x85,
-        0x00, 0xa5, 0xfe, 0x29, 0x03, 0x18, 0x69, 0x02, 0x85, 0x01, 0x60, 0x20, 0x4d, 0x86, 0x20,
-        0x8d, 0x86, 0x20, 0xc3, 0x86, 0x20, 0x19, 0x87, 0x20, 0x20, 0x87, 0x20, 0x2d, 0x87, 0x4c,
-        0x38, 0x86, 0xa5, 0xff, 0xc9, 0x77, 0xf0, 0x0d, 0xc9, 0x64, 0xf0, 0x14, 0xc9, 0x73, 0xf0,
-        0x1b, 0xc9, 0x61, 0xf0, 0x22, 0x60, 0xa9, 0x04, 0x24, 0x02, 0xd0, 0x26, 0xa9, 0x01, 0x85,
-        0x02, 0x60, 0xa9, 0x08, 0x24, 0x02, 0xd0, 0x1b, 0xa9, 0x02, 0x85, 0x02, 0x60, 0xa9, 0x01,
-        0x24, 0x02, 0xd0, 0x10, 0xa9, 0x04, 0x85, 0x02, 0x60, 0xa9, 0x02, 0x24, 0x02, 0xd0, 0x05,
-        0xa9, 0x08, 0x85, 0x02, 0x60, 0x60, 0x20, 0x94, 0x86, 0x20, 0xa8, 0x86, 0x60, 0xa5, 0x00,
-        0xc5, 0x10, 0xd0, 0x0d, 0xa5, 0x01, 0xc5, 0x11, 0xd0, 0x07, 0xe6, 0x03, 0xe6, 0x03, 0x20,
-        0x2a, 0x86, 0x60, 0xa2, 0x02, 0xb5, 0x10, 0xc5, 0x10, 0xd0, 0x06, 0xb5, 0x11, 0xc5, 0x11,
-        0xf0, 0x09, 0xe8, 0xe8, 0xe4, 0x03, 0xf0, 0x06, 0x4c, 0xaa, 0x86, 0x4c, 0x35, 0x87, 0x60,
-        0xa6, 0x03, 0xca, 0x8a, 0xb5, 0x10, 0x95, 0x12, 0xca, 0x10, 0xf9, 0xa5, 0x02, 0x4a, 0xb0,
-        0x09, 0x4a, 0xb0, 0x19, 0x4a, 0xb0, 0x1f, 0x4a, 0xb0, 0x2f, 0xa5, 0x10, 0x38, 0xe9, 0x20,
-        0x85, 0x10, 0x90, 0x01, 0x60, 0xc6, 0x11, 0xa9, 0x01, 0xc5, 0x11, 0xf0, 0x28, 0x60, 0xe6,
-        0x10, 0xa9, 0x1f, 0x24, 0x10, 0xf0, 0x1f, 0x60, 0xa5, 0x10, 0x18, 0x69, 0x20, 0x85, 0x10,
-        0xb0, 0x01, 0x60, 0xe6, 0x11, 0xa9, 0x06, 0xc5, 0x11, 0xf0, 0x0c, 0x60, 0xc6, 0x10, 0xa5,
-        0x10, 0x29, 0x1f, 0xc9, 0x1f, 0xf0, 0x01, 0x60, 0x4c, 0x35, 0x87, 0xa0, 0x00, 0xa5, 0xfe,
-        0x91, 0x00, 0x60, 0xa6, 0x03, 0xa9, 0x00, 0x81, 0x10, 0xa2, 0x00, 0xa9, 0x01, 0x81, 0x10,
-        0x60, 0xa2, 0x00, 0xea, 0xea, 0xca, 0xd0, 0xfb, 0x60,
-    ];
+    let pallete = [(0, 0, 0), (250, 0, 0), (0, 255, 0), (0, 0, 255)];
 
-    let rom = Rom::new2(0x600, &code);
+    for tile_y in 0..16 {
+        for tile_x in 0..16 {
+            for fine_y in 0..8 {
+                let addr = 0x0000 | tile_y << 8 | tile_x << 4 | fine_y;
 
-    let mut cpu = Cpu::new();
-    let mut bus = Bus::new(rom);
-    //cpu.reset(&bus);
-    cpu.pc = 0x8600;
+                let mut lsb = cart.read_ppu(addr).unwrap();
+                let mut msb = cart.read_ppu(addr + 8).unwrap();
 
-    loop {
-        handle_user_input(&mut bus, &mut event_pump);
-        bus.write8(0xfe, rng.gen_range(1, 16));
+                let mask = 0b1000_0000;
 
-        if read_screen_state(&bus, &mut screen_state) {
-            texture.update(None, &screen_state, 32 * 3).unwrap();
-            canvas.copy(&texture, None, None).unwrap();
-            canvas.present();
+                for fine_x in 0..8 {
+                    let ind = (msb & mask) >> 6 | (lsb & mask) >> 7;
+                    msb <<= 1;
+                    lsb <<= 1;
+
+                    let (r, g, b) = pallete[ind as usize];
+
+                    let off =
+                        ((tile_y * 8 + fine_y) * 128 * 3 + tile_x * 8 * 3 + fine_x * 3) as usize;
+                    screen_state[off + 0] = r;
+                    screen_state[off + 1] = g;
+                    screen_state[off + 2] = b;
+                }
+            }
         }
-        //cpu.dump(&bus);
-        let cyc = cpu.step(&mut bus);
-
-        // ::std::thread::sleep(std::time::Duration::new(0, cyc as u32 * 1_00));
     }
+
+    // for x in 0..128 {
+    //     for y in 0..128 {
+    //         if (x != y) {
+    //             continue;
+    //         };
+
+    //         let cord = y * 128 * 3 + x * 3;
+    //         let (r, g, b) = pallete[ind];
+
+    //         screen_state[cord + 0] = r;
+    //         screen_state[cord + 1] = g;
+    //         screen_state[cord + 2] = b;
+
+    //         ind = ind + 1 & 0b0011;
+    //     }
+    // }
+
+    texture.update(None, &screen_state[..], 3 * 128).unwrap();
+
+    let mut event_pump = sdl_context.event_pump()?;
+    let mut i = 0;
+    'running: loop {
+        for event in event_pump.poll_iter() {
+            match event {
+                Event::Quit { .. }
+                | Event::KeyDown {
+                    keycode: Some(Keycode::Escape),
+                    ..
+                } => {
+                    break 'running;
+                }
+                _ => {}
+            }
+        }
+
+        // Update
+        i = (i + 1) % 255;
+
+        // Render
+        //render(&mut canvas, );
+
+        canvas.set_draw_color(Color::RGB(i, 64, 255 - i));
+        canvas.clear();
+        canvas
+            .copy(
+                &texture,
+                Rect::new(0, 0, 128, 128),
+                Rect::new(10, 10, 4 * 128, 4 * 128),
+            )
+            .unwrap();
+        canvas.present();
+
+        // Time management!
+        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
+    }
+
+    Ok(())
 }
