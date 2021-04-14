@@ -1,5 +1,4 @@
-use super::bus::Memory;
-use super::clock::Clockable;
+use super::bus::{MemoryRead, MemoryWrite};
 use super::opcodes::AddressMode;
 use super::opcodes::*;
 
@@ -34,12 +33,6 @@ pub struct Cpu {
     cycles_left: u8,
 }
 
-impl Clockable for Cpu {
-    fn clock() {
-        todo!()
-    }
-}
-
 impl Cpu {
     pub fn new() -> Self {
         return Self {
@@ -55,7 +48,7 @@ impl Cpu {
 
     pub fn reset<T>(&mut self, bus: &T)
     where
-        T: Memory,
+        T: MemoryRead,
     {
         self.a = 0;
         self.x = 0;
@@ -71,7 +64,7 @@ impl Cpu {
 
     pub fn clock<T>(&mut self, bus: &mut T)
     where
-        T: Memory,
+        T: MemoryRead + MemoryWrite,
     {
         if self.cycles_left == 0 {
             self.dump(bus);
@@ -82,7 +75,7 @@ impl Cpu {
 
     pub fn dump<T>(&self, bus: &T)
     where
-        T: Memory,
+        T: MemoryRead,
     {
         let ins = get_inst(bus.read(self.pc));
         println!(
@@ -97,7 +90,7 @@ impl Cpu {
 
     fn step<T>(&mut self, bus: &mut T) -> u8
     where
-        T: Memory,
+        T: MemoryRead + MemoryWrite,
     {
         let ins = bus.read(self.pc);
         self.pc += 1;
@@ -204,7 +197,7 @@ impl Cpu {
 
     fn get_memory_dump<T>(&self, ins: &Instruction, bus: &T) -> String
     where
-        T: Memory,
+        T: MemoryRead,
     {
         let size = Cpu::get_instruction_size(ins);
         let a = if size > 0 {
@@ -228,7 +221,7 @@ impl Cpu {
 
     fn get_operand_dump<T>(&self, ins: &Instruction, bus: &T) -> String
     where
-        T: Memory,
+        T: MemoryRead,
     {
         let mode = ins.addressing_mode;
         match mode {
@@ -341,7 +334,7 @@ impl Cpu {
 
     fn get_address<T>(&mut self, mode: &AddressMode, bus: &T) -> Address
     where
-        T: Memory,
+        T: MemoryRead,
     {
         match mode {
             AddressMode::Implied => Address(0, false),
@@ -455,7 +448,7 @@ impl Cpu {
 
     fn lda<T>(&mut self, inst: &Instruction, bus: &T) -> u8
     where
-        T: Memory,
+        T: MemoryRead,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         self.a = bus.read(addr);
@@ -464,7 +457,7 @@ impl Cpu {
     }
     fn sta<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
-        T: Memory,
+        T: MemoryRead + MemoryWrite,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         bus.write(addr, self.a);
@@ -472,7 +465,7 @@ impl Cpu {
     }
     fn ldx<T>(&mut self, inst: &Instruction, bus: &T) -> u8
     where
-        T: Memory,
+        T: MemoryRead,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         self.x = bus.read(addr);
@@ -481,7 +474,7 @@ impl Cpu {
     }
     fn stx<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
-        T: Memory,
+        T: MemoryRead + MemoryWrite,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         bus.write(addr, self.x);
@@ -489,7 +482,7 @@ impl Cpu {
     }
     fn ldy<T>(&mut self, inst: &Instruction, bus: &T) -> u8
     where
-        T: Memory,
+        T: MemoryRead,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         self.y = bus.read(addr);
@@ -498,7 +491,7 @@ impl Cpu {
     }
     fn sty<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
-        T: Memory,
+        T: MemoryRead + MemoryWrite,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         bus.write(addr, self.y);
@@ -535,7 +528,7 @@ impl Cpu {
     }
     fn pha<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
-        T: Memory,
+        T: MemoryRead + MemoryWrite,
     {
         bus.write(0x0100 | (self.s as u16), self.a);
         self.s = self.s.wrapping_sub(1);
@@ -543,7 +536,7 @@ impl Cpu {
     }
     fn pla<T>(&mut self, inst: &Instruction, bus: &T) -> u8
     where
-        T: Memory,
+        T: MemoryRead,
     {
         self.s = self.s.wrapping_add(1);
         self.a = bus.read(0x0100 | (self.s as u16));
@@ -552,7 +545,7 @@ impl Cpu {
     }
     fn php<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
-        T: Memory,
+        T: MemoryRead + MemoryWrite,
     {
         let flags = self.status | flags::B1 | flags::B2;
         bus.write(0x0100 | (self.s as u16), flags);
@@ -561,7 +554,7 @@ impl Cpu {
     }
     fn plp<T>(&mut self, inst: &Instruction, bus: &T) -> u8
     where
-        T: Memory,
+        T: MemoryRead,
     {
         self.s = self.s.wrapping_add(1);
         let status = bus.read(0x0100 | (self.s as u16));
@@ -570,7 +563,7 @@ impl Cpu {
     }
     fn ora<T>(&mut self, inst: &Instruction, bus: &T) -> u8
     where
-        T: Memory,
+        T: MemoryRead,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         self.a |= bus.read(addr);
@@ -579,7 +572,7 @@ impl Cpu {
     }
     fn and<T>(&mut self, inst: &Instruction, bus: &T) -> u8
     where
-        T: Memory,
+        T: MemoryRead,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         self.a &= bus.read(addr);
@@ -588,7 +581,7 @@ impl Cpu {
     }
     fn eor<T>(&mut self, inst: &Instruction, bus: &T) -> u8
     where
-        T: Memory,
+        T: MemoryRead,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         self.a ^= bus.read(addr);
@@ -597,7 +590,7 @@ impl Cpu {
     }
     fn adc<T>(&mut self, inst: &Instruction, bus: &T) -> u8
     where
-        T: Memory,
+        T: MemoryRead,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         let arg = bus.read(addr);
@@ -618,7 +611,7 @@ impl Cpu {
     }
     fn sbc<T>(&mut self, inst: &Instruction, bus: &T) -> u8
     where
-        T: Memory,
+        T: MemoryRead,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         let arg = !bus.read(addr);
@@ -639,7 +632,7 @@ impl Cpu {
     }
     fn cmp<T>(&mut self, inst: &Instruction, bus: &T) -> u8
     where
-        T: Memory,
+        T: MemoryRead,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         let m = bus.read(addr);
@@ -652,7 +645,7 @@ impl Cpu {
     }
     fn cpx<T>(&mut self, inst: &Instruction, bus: &T) -> u8
     where
-        T: Memory,
+        T: MemoryRead,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         let m = bus.read(addr);
@@ -665,7 +658,7 @@ impl Cpu {
     }
     fn cpy<T>(&mut self, inst: &Instruction, bus: &T) -> u8
     where
-        T: Memory,
+        T: MemoryRead,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         let m = bus.read(addr);
@@ -678,7 +671,7 @@ impl Cpu {
     }
     fn dec<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
-        T: Memory,
+        T: MemoryRead + MemoryWrite,
     {
         let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
         let m = bus.read(addr);
@@ -691,7 +684,7 @@ impl Cpu {
     }
     fn inc<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
-        T: Memory,
+        T: MemoryRead + MemoryWrite,
     {
         let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
         let m = bus.read(addr);
@@ -724,7 +717,7 @@ impl Cpu {
     }
     fn asl<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
-        T: Memory,
+        T: MemoryRead + MemoryWrite,
     {
         let m: u8;
         let r: u8;
@@ -747,7 +740,7 @@ impl Cpu {
     }
     fn rol<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
-        T: Memory,
+        T: MemoryRead + MemoryWrite,
     {
         let m: u8;
         let r: u8;
@@ -770,7 +763,7 @@ impl Cpu {
     }
     fn lsr<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
-        T: Memory,
+        T: MemoryRead + MemoryWrite,
     {
         let m: u8;
         let r: u8;
@@ -792,7 +785,7 @@ impl Cpu {
     }
     fn ror<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
-        T: Memory,
+        T: MemoryRead + MemoryWrite,
     {
         let m: u8;
         let r: u8;
@@ -814,7 +807,7 @@ impl Cpu {
     }
     fn branch<T>(&mut self, inst: &Instruction, bus: &mut T, flag: u8, branch_when: bool) -> u8
     where
-        T: Memory,
+        T: MemoryRead,
     {
         let Address(addr, page_crossed) = self.get_address(&inst.addressing_mode, bus);
         let branch_taken = self.get_flag(flag) == branch_when;
@@ -832,7 +825,7 @@ impl Cpu {
     }
     fn brk<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
-        T: Memory,
+        T: MemoryRead + MemoryWrite,
     {
         let pc_bytes = self.pc.to_le_bytes();
 
@@ -854,7 +847,7 @@ impl Cpu {
     }
     fn rti<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
-        T: Memory,
+        T: MemoryRead,
     {
         self.s = self.s.wrapping_add(1);
         let status = bus.read(0x0100 | self.s as u16);
@@ -870,7 +863,7 @@ impl Cpu {
     }
     fn jsr<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
-        T: Memory,
+        T: MemoryRead + MemoryWrite,
     {
         let Address(pc_next, _) = self.get_address(&inst.addressing_mode, bus);
 
@@ -888,7 +881,7 @@ impl Cpu {
     }
     fn rts<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
-        T: Memory,
+        T: MemoryRead,
     {
         self.s = self.s.wrapping_add(1);
         let pc_lo = bus.read(0x0100 | self.s as u16);
@@ -904,7 +897,7 @@ impl Cpu {
     }
     fn jmp<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
-        T: Memory,
+        T: MemoryRead,
     {
         let Address(pc_next, _) = self.get_address(&inst.addressing_mode, bus);
 
@@ -914,7 +907,7 @@ impl Cpu {
     }
     fn bit<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
-        T: Memory,
+        T: MemoryRead,
     {
         let Address(addr, _) = self.get_address(&inst.addressing_mode, bus);
         let m = bus.read(addr);
@@ -957,10 +950,12 @@ mod tests {
         }
     }
 
-    impl Memory for Bus {
+    impl MemoryWrite for Bus {
         fn write(&mut self, addr: u16, v: u8) {
             self.data.insert(addr, v);
         }
+    }
+    impl MemoryRead for Bus {
         fn read(&self, addr: u16) -> u8 {
             if let Some(v) = self.data.get(&addr) {
                 *v

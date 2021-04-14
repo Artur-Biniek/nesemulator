@@ -4,55 +4,66 @@ use super::ppu::Ppu;
 pub const RAM_END: u16 = 0x2000 - 1;
 pub const PPU_REGISTERS: u16 = 0x2000;
 pub const PPU_REGISTERS_MIRRORS_END: u16 = 0x3FFF;
+pub const PPU_DMA_ADDR: u16 = 0x4014;
 pub const PRG_ROM_START: u16 = 0x8000;
 pub const PRG_ROM_END: u16 = 0xFFFF;
 
 pub struct Bus<'a> {
     ram: &'a mut [u8; 2 * 1024],
     nmi: &'a mut bool,
+    dma: &'a mut Dma,
     cartridge: &'a mut Cartridge,
     ppu: &'a mut Ppu,
 }
 
-pub trait Memory {
-    fn write(&mut self, addr: u16, value: u8);
+pub struct DmaBus<'a> {
+    ram: &'a mut [u8; 2 * 1024],
+    cartridge: &'a mut Cartridge,
+}
+
+pub trait MemoryRead {
     fn read(&self, addr: u16) -> u8;
+}
+
+pub trait MemoryWrite {
+    fn write(&mut self, addr: u16, value: u8);
+}
+
+pub type DmaOffset = u8;
+pub type DmaPage = u8;
+
+pub enum Dma {
+    Off,
+    Requested(DmaPage),
+    Write(DmaPage, DmaOffset, u8),
+    Read(DmaPage, u8),
 }
 
 impl<'a> Bus<'a> {
     pub fn new(
         ram: &'a mut [u8; 2048],
         nmi: &'a mut bool,
+        dma: &'a mut Dma,
         cartridge: &'a mut Cartridge,
         ppu: &'a mut Ppu,
     ) -> Self {
         return Self {
             ram,
             nmi,
+            dma,
             cartridge,
             ppu,
         };
     }
 }
 
-impl Memory for Bus<'_> {
-    fn write(&mut self, addr: u16, value: u8) {
-        match addr {
-            0..=RAM_END => {
-                let mirror_insensitive = addr & 0x07FF;
-                self.ram[mirror_insensitive as usize] = value
-            }
-
-            PPU_REGISTERS..=PPU_REGISTERS_MIRRORS_END => {
-                let _mirror_down_addr = addr & 0b00100000_00000111;
-                // todo!("PPU")
-                ()
-            }
-
-            _ => panic!("Unsupported write @{:X}={:X}", addr, value),
-        }
+impl<'a> DmaBus<'a> {
+    pub fn new(ram: &'a mut [u8; 2048], cartridge: &'a mut Cartridge) -> Self {
+        return Self { ram, cartridge };
     }
+}
 
+impl MemoryRead for DmaBus<'_> {
     fn read(&self, addr: u16) -> u8 {
         if let Some(val) = self.cartridge.read_cpu(addr) {
             val
@@ -70,6 +81,53 @@ impl Memory for Bus<'_> {
 
                 _ => panic!("Unsupported read from @{:X}", addr),
             }
+        }
+    }
+}
+
+impl MemoryWrite for Bus<'_> {
+    fn write(&mut self, addr: u16, value: u8) {
+        match addr {
+            0..=RAM_END => {
+                let mirror_insensitive = addr & 0x07FF;
+                self.ram[mirror_insensitive as usize] = value
+            }
+
+            PPU_REGISTERS..=PPU_REGISTERS_MIRRORS_END => {
+                let _mirror_down_addr = addr & 0b00100000_00000111;
+                // todo!("PPU")
+                ()
+            }
+
+            PPU_DMA_ADDR => *self.dma = Dma::Requested(value),
+
+            _ => panic!("Unsupported write @{:X}={:X}", addr, value),
+        }
+    }
+}
+
+impl MemoryRead for Bus<'_> {
+    fn read(&self, addr: u16) -> u8 {
+        read_memory(&self.ram, &self.cartridge, &self.ppu, addr)
+    }
+}
+
+fn read_memory(ram: &[u8; 2048], cartridge: &Cartridge, ppu: &Ppu, addr: u16) -> u8 {
+    if let Some(val) = cartridge.read_cpu(addr) {
+        val
+    } else {
+        match addr {
+            0..=RAM_END => {
+                let mirror_insensitive = addr & 0x07FF;
+                ram[mirror_insensitive as usize]
+            }
+            PPU_REGISTERS..=PPU_REGISTERS_MIRRORS_END => {
+                let _mirror_down_addr = addr & 0b00100000_00000111;
+                //todo!("PPU" );
+                0
+            }
+
+            _ => panic!("Unsupported read from @{:X}", addr),
         }
     }
 }

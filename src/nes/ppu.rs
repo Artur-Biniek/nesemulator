@@ -1,14 +1,26 @@
 pub struct Ppu {
     reg: u8,
+    cycles: u32,
+    scanline: i32,
+    oam_addr:  u8,
+    oam_ram : [u8; 256]
 }
 
 impl Ppu {
     pub fn new() -> Self {
-        Ppu { reg: 0 }
+        Ppu { reg: 0, scanline :-1, cycles: 0, oam_addr:0, oam_ram: [0u8 ; 256],
+         }
     }
 
-    pub fn reset(&mut self) {}
-    pub fn clock(&mut self, nmi: &mut bool) {}
+    pub fn reset(&mut self) {
+        self.scanline = -1;
+        self.cycles = 0;
+    }
+
+    pub fn clock(&mut self, nmi: &mut bool) {
+
+    }
+
     pub fn write_register(&mut self, reg: u8, value: u8) {
         match reg {            
             0x0 /* Controller ($2000) > write */ => self.reg = value,
@@ -31,4 +43,8 @@ impl Ppu {
         }
     }
     pub fn write_dma_addr(&mut self, source_page: u8) {}
+    pub fn dma_write (&mut self, offset   :u8 , data: u8){
+    
+        self.oam_ram[self.oam_addr.wrapping_add(offset) as usize] = data;
+    }
 }

@@ -1,4 +1,4 @@
-use crate::nes::bus::Bus;
+use crate::nes::bus::{Bus, Dma, DmaBus, DmaPage, MemoryRead};
 use crate::nes::cpu::Cpu;
 use crate::nes::ppu::Ppu;
 use crate::nes::Cartridge;
@@ -8,6 +8,7 @@ pub struct Console {
     ppu: Ppu,
     ram: [u8; 2048],
     nmi: bool,
+    dma: Dma,
     system_cycles: u64,
     cart: Cartridge,
 }
@@ -19,6 +20,7 @@ impl Console {
             ppu: Ppu::new(),
             ram: [0u8; 2048],
             nmi: false,
+            dma: Dma::Off,
             system_cycles: 0,
             cart,
         }
@@ -27,10 +29,17 @@ impl Console {
     pub fn reset(&mut self, start: Option<u16>) {
         self.system_cycles = 0;
         self.nmi = false;
-        self.ppu.reset();
+        self.dma = Dma::Off;
 
-        let mut bus = Bus::new(&mut self.ram, &mut self.nmi, &mut self.cart, &mut self.ppu);
+        let mut bus = Bus::new(
+            &mut self.ram,
+            &mut self.nmi,
+            &mut self.dma,
+            &mut self.cart,
+            &mut self.ppu,
+        );
         self.cpu.reset(&mut bus);
+        self.ppu.reset();
 
         if let Some(addr) = start {
             self.cpu.pc = addr;
@@ -40,9 +49,36 @@ impl Console {
     pub fn clock(&mut self) {
         self.ppu.clock(&mut self.nmi);
         if self.system_cycles % 3 == 0 {
-            let mut bus = Bus::new(&mut self.ram, &mut self.nmi, &mut self.cart, &mut self.ppu);
-
-            self.cpu.clock(&mut bus);
+            if let Dma::Off = self.dma {
+                let mut bus = Bus::new(
+                    &mut self.ram,
+                    &mut self.nmi,
+                    &mut self.dma,
+                    &mut self.cart,
+                    &mut self.ppu,
+                );
+                self.cpu.clock(&mut bus);
+            } else {
+                let mut bus = DmaBus::new(&mut self.ram, &mut self.cart);
+                match self.dma {
+                    Dma::Requested(page) if (self.system_cycles & 1) == 0 => {
+                        self.dma = Dma::Read(page, 0);
+                    }
+                    Dma::Read(page, offset) => {
+                        let data = bus.read((page as u16) << 8 | offset as u16);
+                        self.dma = Dma::Write(page, offset, data);
+                    }
+                    Dma::Write(page, offset, data) => {
+                        self.ppu.dma_write(offset, data);
+                        self.dma = if offset < u8::MAX {
+                            Dma::Read(page, offset.wrapping_add(1))
+                        } else {
+                            Dma::Off
+                        }
+                    }
+                    _ => panic!("Invalid DMA state"),
+                }
+            }
         }
         self.system_cycles += 1;
     }

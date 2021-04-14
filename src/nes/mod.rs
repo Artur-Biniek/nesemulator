@@ -1,6 +1,5 @@
 mod bus;
 mod cartridge;
-mod clock;
 mod console;
 mod cpu;
 mod mappers;
