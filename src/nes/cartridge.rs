@@ -17,6 +17,7 @@ pub enum Mirroring {
 
 pub struct Cartridge {
     mapper: Box<dyn Mapper>,
+    pub mirroring: Mirroring,
 }
 
 impl Cartridge {
@@ -36,7 +37,7 @@ impl Cartridge {
 
                 let four_screen = raw[6] & 0b1000 != 0;
                 let vertical_mirroring = raw[6] & 0b1 != 0;
-                let screen_mirroring = match (four_screen, vertical_mirroring) {
+                let mirroring = match (four_screen, vertical_mirroring) {
                     (true, _) => Mirroring::FourScreen,
                     (false, true) => Mirroring::Vertical,
                     (false, false) => Mirroring::Horizontal,
@@ -59,6 +60,7 @@ impl Cartridge {
 
                 return Ok(Cartridge {
                     mapper: Box::new(mapper),
+                    mirroring,
                 });
             }
         }

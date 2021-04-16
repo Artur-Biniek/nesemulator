@@ -1,4 +1,4 @@
-use super::bus::{MemoryRead, MemoryWrite};
+use super::bus::{MemoryRead, MemoryWrite, NmiHandler};
 use super::opcodes::AddressMode;
 use super::opcodes::*;
 
@@ -18,6 +18,7 @@ mod flags {
 mod vectors {
     pub const IRQ: u16 = 0xFFFE;
     pub const RESET: u16 = 0xFFFC;
+    pub const NMI: u16 = 0xFFFA;
 }
 
 const STACK_RESET: u8 = 0xFD;
@@ -46,7 +47,7 @@ impl Cpu {
         };
     }
 
-    pub fn reset<T>(&mut self, bus: &T)
+    pub fn reset<T>(&mut self, bus: &mut T)
     where
         T: MemoryRead,
     {
@@ -60,20 +61,27 @@ impl Cpu {
         let pc_hi = bus.read(vectors::RESET.wrapping_add(1));
 
         self.pc = u16::from_le_bytes([pc_lo, pc_hi]);
+
+        self.cycles_left = 8;
     }
 
     pub fn clock<T>(&mut self, bus: &mut T)
     where
-        T: MemoryRead + MemoryWrite,
+        T: MemoryRead + MemoryWrite + NmiHandler,
     {
         if self.cycles_left == 0 {
-            self.dump(bus);
-            self.cycles_left = self.step(bus);
+            let nmi = bus.read_clear_nmi();
+            if nmi {
+                self.cycles_left = self.interrupt_nmi(bus);
+            } else {
+                self.dump(bus);
+                self.cycles_left = self.step(bus);
+            }
         }
         self.cycles_left -= 1;
     }
 
-    pub fn dump<T>(&self, bus: &T)
+    pub fn dump<T>(&self, bus: &mut T)
     where
         T: MemoryRead,
     {
@@ -195,7 +203,7 @@ impl Cpu {
         }
     }
 
-    fn get_memory_dump<T>(&self, ins: &Instruction, bus: &T) -> String
+    fn get_memory_dump<T>(&self, ins: &Instruction, bus: &mut T) -> String
     where
         T: MemoryRead,
     {
@@ -219,7 +227,7 @@ impl Cpu {
         format!("{} {} {}", a, b, c)
     }
 
-    fn get_operand_dump<T>(&self, ins: &Instruction, bus: &T) -> String
+    fn get_operand_dump<T>(&self, ins: &Instruction, bus: &mut T) -> String
     where
         T: MemoryRead,
     {
@@ -332,7 +340,7 @@ impl Cpu {
         }
     }
 
-    fn get_address<T>(&mut self, mode: &AddressMode, bus: &T) -> Address
+    fn get_address<T>(&mut self, mode: &AddressMode, bus: &mut T) -> Address
     where
         T: MemoryRead,
     {
@@ -446,7 +454,7 @@ impl Cpu {
         self.set_flag(flags::Z, value == 0);
     }
 
-    fn lda<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    fn lda<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: MemoryRead,
     {
@@ -463,7 +471,7 @@ impl Cpu {
         bus.write(addr, self.a);
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
-    fn ldx<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    fn ldx<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: MemoryRead,
     {
@@ -480,7 +488,7 @@ impl Cpu {
         bus.write(addr, self.x);
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
-    fn ldy<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    fn ldy<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: MemoryRead,
     {
@@ -534,7 +542,7 @@ impl Cpu {
         self.s = self.s.wrapping_sub(1);
         inst.cycle_cost
     }
-    fn pla<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    fn pla<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: MemoryRead,
     {
@@ -552,7 +560,7 @@ impl Cpu {
         self.s = self.s.wrapping_sub(1);
         inst.cycle_cost
     }
-    fn plp<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    fn plp<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: MemoryRead,
     {
@@ -561,7 +569,7 @@ impl Cpu {
         self.status = (self.status & (flags::B1 | flags::B2)) | (status & !(flags::B1 | flags::B2));
         inst.cycle_cost
     }
-    fn ora<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    fn ora<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: MemoryRead,
     {
@@ -570,7 +578,7 @@ impl Cpu {
         self.set_zero_and_negative_flags(self.a);
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
-    fn and<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    fn and<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: MemoryRead,
     {
@@ -579,7 +587,7 @@ impl Cpu {
         self.set_zero_and_negative_flags(self.a);
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
-    fn eor<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    fn eor<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: MemoryRead,
     {
@@ -588,7 +596,7 @@ impl Cpu {
         self.set_zero_and_negative_flags(self.a);
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
-    fn adc<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    fn adc<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: MemoryRead,
     {
@@ -609,7 +617,7 @@ impl Cpu {
 
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
-    fn sbc<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    fn sbc<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: MemoryRead,
     {
@@ -630,7 +638,7 @@ impl Cpu {
 
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
-    fn cmp<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    fn cmp<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: MemoryRead,
     {
@@ -643,7 +651,7 @@ impl Cpu {
 
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
-    fn cpx<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    fn cpx<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: MemoryRead,
     {
@@ -656,7 +664,7 @@ impl Cpu {
 
         inst.cycle_cost + if page_crossed { 1 } else { 0 }
     }
-    fn cpy<T>(&mut self, inst: &Instruction, bus: &T) -> u8
+    fn cpy<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: MemoryRead,
     {
@@ -845,6 +853,28 @@ impl Cpu {
 
         inst.cycle_cost
     }
+    fn interrupt_nmi<T>(&mut self, bus: &mut T) -> u8
+    where
+        T: MemoryRead + MemoryWrite,
+    {
+        let pc_bytes = self.pc.to_le_bytes();
+
+        bus.write(0x0100 | self.s as u16, pc_bytes[1]);
+        self.s = self.s.wrapping_sub(1);
+        bus.write(0x0100 | self.s as u16, pc_bytes[0]);
+        self.s = self.s.wrapping_sub(1);
+        bus.write(0x0100 | self.s as u16, self.status | flags::B1);
+        self.s = self.s.wrapping_sub(1);
+
+        self.set_flag(flags::I, true);
+
+        let nmi_lo = bus.read(vectors::NMI);
+        let nmi_hi = bus.read(vectors::NMI.wrapping_add(1));
+
+        self.pc = u16::from_le_bytes([nmi_lo, nmi_hi]);
+
+        7
+    }
     fn rti<T>(&mut self, inst: &Instruction, bus: &mut T) -> u8
     where
         T: MemoryRead,
@@ -956,7 +986,7 @@ mod tests {
         }
     }
     impl MemoryRead for Bus {
-        fn read(&self, addr: u16) -> u8 {
+        fn read(&mut self, addr: u16) -> u8 {
             if let Some(v) = self.data.get(&addr) {
                 *v
             } else {

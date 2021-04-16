@@ -1,4 +1,4 @@
-use crate::nes::bus::{Bus, Dma, DmaBus, DmaPage, MemoryRead};
+use crate::nes::bus::{Bus, Dma, DmaBus, MemoryRead};
 use crate::nes::cpu::Cpu;
 use crate::nes::ppu::Ppu;
 use crate::nes::Cartridge;
@@ -59,12 +59,12 @@ impl Console {
                 );
                 self.cpu.clock(&mut bus);
             } else {
-                let mut bus = DmaBus::new(&mut self.ram, &mut self.cart);
                 match self.dma {
                     Dma::Requested(page) if (self.system_cycles & 1) == 0 => {
                         self.dma = Dma::Read(page, 0);
                     }
                     Dma::Read(page, offset) => {
+                        let mut bus = DmaBus::new(&mut self.ram, &mut self.cart, &mut self.ppu);
                         let data = bus.read((page as u16) << 8 | offset as u16);
                         self.dma = Dma::Write(page, offset, data);
                     }
