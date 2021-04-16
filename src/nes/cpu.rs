@@ -74,7 +74,7 @@ impl Cpu {
             if nmi {
                 self.cycles_left = self.interrupt_nmi(bus);
             } else {
-                self.dump(bus);
+                //self.dump(bus);
                 self.cycles_left = self.step(bus);
             }
         }

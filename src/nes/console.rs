@@ -3,6 +3,8 @@ use crate::nes::cpu::Cpu;
 use crate::nes::ppu::Ppu;
 use crate::nes::Cartridge;
 
+const VIDEO_SIZE: usize = 3 * 256 * 240;
+
 pub struct Console {
     cpu: Cpu,
     ppu: Ppu,
@@ -11,6 +13,7 @@ pub struct Console {
     dma: Dma,
     system_cycles: u64,
     cart: Cartridge,
+    pub video: [u8; VIDEO_SIZE],
 }
 
 impl Console {
@@ -23,6 +26,7 @@ impl Console {
             dma: Dma::Off,
             system_cycles: 0,
             cart,
+            video: [0; VIDEO_SIZE],
         }
     }
 
@@ -46,8 +50,8 @@ impl Console {
         }
     }
 
-    pub fn clock(&mut self) {
-        self.ppu.clock(&mut self.nmi);
+    pub fn clock(&mut self) -> bool {
+        let frame_ready = self.ppu.clock(&mut self.nmi, &mut self.video);
         if self.system_cycles % 3 == 0 {
             if let Dma::Off = self.dma {
                 let mut bus = Bus::new(
@@ -81,5 +85,6 @@ impl Console {
             }
         }
         self.system_cycles += 1;
+        frame_ready
     }
 }
