@@ -8,16 +8,17 @@ use nes::Console;
 //use sdl2::pixels::Color;
 //use sdl2::pixels::PixelFormatEnum;
 //use sdl2::rect::Rect;
-//use std::time::Duration;
+use std::time::Duration;
 
 fn test() {
     let cartridge = Cartridge::new("nestest.nes").unwrap();
 
     let mut console = Console::new(cartridge);
-    console.reset(Some(0xc000));
-    //console.reset(None);
+    //console.reset(Some(0xc000));
+    console.reset(None);
     loop {
         console.clock();
+        //::std::thread::sleep(Duration::new(0,  1_000_000_u32 / 60));
     }
 }
 

@@ -13,27 +13,30 @@ pub struct Ppu {
     vram: [u8; 2 * 1024],
     palette: [u8; 32],
     buffer: u8,
-    vertical_blank: bool,
     write_toggle: bool,
     loopy_reg_video_ram: LoopyRegister,
     loopy_reg_temp_ram: LoopyRegister,
     fine_x: u8,
+    odd_frame: bool,
 }
 
 impl Ppu {
     pub fn new() -> Self {
         Ppu {
+            scanline: 0,
+            cycles: 0,
+            odd_frame: false,
+
             control: ControlRegister::new(),
             mask: MaskRegister::new(),
             status: StatusRegister::new(),
-            scanline: -1,
-            cycles: 0,
+
             oam_addr: 0,
             oam_ram: [0; 256],
             vram: [0; 2 * 1024],
             palette: [0; 32],
+
             buffer: 0,
-            vertical_blank: false,
             write_toggle: false,
             loopy_reg_video_ram: LoopyRegister::new(),
             loopy_reg_temp_ram: LoopyRegister::new(),
@@ -42,8 +45,9 @@ impl Ppu {
     }
 
     pub fn reset(&mut self) {
-        self.scanline = -1;
+        self.scanline = 0;
         self.cycles = 0;
+        self.odd_frame = false;
 
         self.buffer = 0;
 
@@ -57,7 +61,40 @@ impl Ppu {
         self.fine_x = 0;
     }
 
-    pub fn clock(&mut self, nmi: &mut bool) {}
+    pub fn clock(&mut self, nmi: &mut bool) {
+        //println!("PPU: {}:{}", self.scanline, self.cycles);
+        if self.scanline < 240 {
+        } else if self.scanline >= 240 && self.scanline < 261 {
+            if self.scanline == 241 && self.cycles == 1 {
+                self.status.set_vertical_blank(true);
+
+                println!("VBLANK - start");
+                if self.control.nmi_enabled() {
+                    *nmi = true;
+                }
+            }
+        } else {
+            // 261
+            if self.cycles == 1 {
+                println!("VBLANK - finish");
+                self.status.set_vertical_blank(false);
+                self.status.set_sprite_zero_hit(false);
+            }
+        }
+
+        self.cycles += 1;
+        if self.cycles >= 341 {
+            self.cycles = 0;
+            self.scanline += 1;
+
+            if self.scanline >= 262 {
+                self.scanline = 0;
+                self.odd_frame = !self.odd_frame;
+
+                println!("FRAME FINISHED");
+            }
+        }
+    }
 
     pub fn write_register(&mut self, cart: &mut Cartridge, reg: u8, value: u8) {
         match reg {
@@ -105,29 +142,52 @@ impl Ppu {
         };
     }
 
-    pub fn read_register(&mut self, cart: &Cartridge, reg: u8) -> u8 {
-        match  reg {
-            0x2 /* Status ($2002) < read */ => {
-                self.status.set_vertical_blank(false);
-                self.write_toggle = false;
-                (self.status.register & 0xE0) | (self.buffer & 0x1F)
+    pub fn read_register(&mut self, cart: &Cartridge, reg: u8, debug: bool) -> u8 {
+        if debug {
+            match  reg {
+                0x2 /* Status ($2002) < read */ => {
+                    (self.status.register & 0xE0) | (self.buffer & 0x1F)
+                }
+                0x4 /* OAM data ($2004) <> read/write */ => {
+                    self.oam_ram[self.oam_addr as usize]
+                }
+                0x7 /* Data ($2007) <> read/write */ => {
+                    let mut data = self.buffer;
+
+                    let lvram = self.loopy_reg_video_ram.register() ;
+                    let buffer = self.read(cart, lvram);
+
+                    if lvram >= 0x3F00 {data = buffer;}
+
+                    data
+                },
+                _ => 0
             }
-            0x4 /* OAM data ($2004) <> read/write */ => {
-                self.oam_ram[self.oam_addr as usize]
+        } else {
+            match  reg {
+                0x2 /* Status ($2002) < read */ => {
+                    let data =  (self.status.register & 0xE0) | (self.buffer & 0x1F);
+                    self.status.set_vertical_blank(false);
+                    self.write_toggle = false;
+                    data
+                }
+                0x4 /* OAM data ($2004) <> read/write */ => {
+                    self.oam_ram[self.oam_addr as usize]
+                }
+                0x7 /* Data ($2007) <> read/write */ => {
+                    let mut data = self.buffer;
+
+                    let lvram = self.loopy_reg_video_ram.register() ;
+                    self.buffer = self.read(cart, lvram);
+
+                    if lvram >= 0x3F00 {data = self.buffer;}
+
+                    self.loopy_reg_video_ram.set_register(lvram +  if self.control.increment_mode()  {32} else {1});
+
+                    data
+                },
+                _ => 0
             }
-            0x7 /* Data ($2007) <> read/write */ => {
-                let mut data = self.buffer;
-
-                let lvram = self.loopy_reg_video_ram.register() ;
-                self.buffer = self.read(cart, lvram);
-
-                if lvram >= 0x3F00 {data = self.buffer;}
-
-                self.loopy_reg_video_ram.set_register(lvram +  if self.control.increment_mode()  {32} else {1});
-
-                data
-            },
-            _ => 0
         }
     }
 

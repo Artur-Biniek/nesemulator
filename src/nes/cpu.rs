@@ -85,6 +85,7 @@ impl Cpu {
     where
         T: MemoryRead,
     {
+        bus.set_trace(true);
         let ins = get_inst(bus.read(self.pc));
         println!(
             "{:04X}  {}  {} {:26}  {}",
@@ -94,6 +95,7 @@ impl Cpu {
             self.get_operand_dump(&ins, bus),
             self.get_regs_dump(),
         );
+        bus.set_trace(false);
     }
 
     fn step<T>(&mut self, bus: &mut T) -> u8
@@ -450,7 +452,7 @@ impl Cpu {
     }
 
     fn set_zero_and_negative_flags(&mut self, value: u8) {
-        self.set_flag(flags::N, (value as i8) < 0);
+        self.set_flag(flags::N, value & 0x80 != 0);
         self.set_flag(flags::Z, value == 0);
     }
 
@@ -993,6 +995,7 @@ mod tests {
                 panic!("Address {:X} empty", addr);
             }
         }
+        fn set_trace(&mut self, trace: bool) {}
     }
 
     #[test]

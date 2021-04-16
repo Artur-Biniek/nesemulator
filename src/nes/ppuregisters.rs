@@ -7,7 +7,7 @@ const CONTROL_FLAG_INC_MODE: u8 = 0b0000_0100;
 // const CONTROL_FLAG_PTRN_BGRND: u8 = 0b0001_0000;
 // const CONTROL_FLAG_SPRITE_SIZE: u8 = 0b0010_0000;
 // const CONTROL_FLAG_SLAVE_MODE: u8 = 0b0100_0000;
-// const CONTROL_FLAG_NMI_ENABLED: u8 = 0b1000_0000;
+const CONTROL_FLAG_NMI_ENABLED: u8 = 0b1000_0000;
 
 pub struct ControlRegister {
     pub register: u8,
@@ -25,6 +25,9 @@ impl ControlRegister {
     }
     pub fn nametable_y(&self) -> bool {
         check_flag(self.register, CONTROL_FLAG_NAMETABLE_Y)
+    }
+    pub fn nmi_enabled(&self) -> bool {
+        check_flag(self.register, CONTROL_FLAG_NMI_ENABLED)
     }
 }
 
@@ -68,6 +71,13 @@ impl StatusRegister {
     }
     pub fn sprite_zero_hit(&self) -> bool {
         check_flag(self.register, StatusFlagMask::SpriteZeroHit as u8)
+    }
+    pub fn set_sprite_zero_hit(&mut self, status: bool) {
+        if status {
+            set_flag(&mut self.register, StatusFlagMask::SpriteZeroHit as u8);
+        } else {
+            clear_flag(&mut self.register, StatusFlagMask::SpriteZeroHit as u8);
+        }
     }
     pub fn vertical_blank(&self) -> bool {
         check_flag(self.register, StatusFlagMask::VerticalBlank as u8)
