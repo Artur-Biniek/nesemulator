@@ -130,12 +130,21 @@ impl Ppu {
         self.fine_x = 0;
     }
 
-    pub fn clock(&mut self, nmi: &mut bool, ram: &mut [u8]) -> bool {
+    pub fn clock(&mut self, nmi: &mut bool, cart: & Cartridge, ram: &mut [u8]) -> bool {
         if self.scanline < 240 {
             if self.cycles < 256 {
                 let off = 256 * 3 * self.scanline + self.cycles * 3;
-                ram[off as usize] = if self.odd_frame {133} else {234};
-                ram[off as usize + 1] = if self.odd_frame {133} else {234};
+           
+                let y = (self.scanline  / 8) as u16;
+                let x = (self.cycles / 8) as u16;
+
+                let v = self.read(cart, 0x2000 + y * 32 + x);
+
+                let (r, g, b) = self.color_rom[if v == 0x20 {0} else {(v % 64) as usize}];
+
+                ram[off as usize + 0] = r;
+                ram[off as usize + 1] = g;
+                ram[off as usize + 2] = b;
             }
         } else if self.scanline >= 240 && self.scanline < 261 {
             if self.scanline == 241 && self.cycles == 1 {
@@ -166,7 +175,20 @@ impl Ppu {
             }
         }
 
-        self.cycles == 241
+
+        // if self.scanline == 241  {
+        //     for y in 0..30 {
+        //         for x in 0..32 {
+        //             let v = self.read(cart, 0x2000 + y * 32 + x);
+        //             print!("{:02X}", v)
+        //         }
+        //         println!("|");
+        //     }
+        //     println!("-------------------------------------------")
+        // }
+
+
+        self.scanline == 241
     }
 
     pub fn write_register(&mut self, cart: &mut Cartridge, reg: u8, value: u8) {
@@ -275,7 +297,7 @@ impl Ppu {
             match addr {
                 0x2000..=0x3EFF => {
                     let masked = addr & 0x0FFF;
-
+                  
                     if cart.mirroring == Mirroring::Vertical {
                         match masked {
                             0x0000..=0x07FF => self.vram[masked as usize] = value,
@@ -291,8 +313,9 @@ impl Ppu {
                             _ => panic!("Oh, no!"),
                         }
                     }
-
-                    panic!("Oh, no!");
+                    else {
+                        panic!("Oh, no! {:04x}={:02x} Mirroriing: {:?}",masked,value, cart.mirroring);
+                    }
                 }
                 0x3F00..=0x3FFF => {
                     let mut masked = addr & 0x1F;

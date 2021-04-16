@@ -101,15 +101,18 @@ impl MemoryWrite for Bus<'_> {
                 let mirror_insensitive = addr & 0x07FF;
                 self.ram[mirror_insensitive as usize] = value
             }
-
             PPU_REGISTERS..=PPU_REGISTERS_MIRRORS_END => {
-                let _mirror_down_addr = addr & 0b00100000_00000111;
-                // todo!("PPU")
-                ()
+                let reg = addr & 0x7;             
+                self.ppu.write_register(&mut self.cartridge, reg as u8, value);
             }
 
             0x4000..=0x4013 | 0x4015 | 0x4017 => {
                 //APU
+            }
+
+            0x4016 => {
+                // Controllers
+                println!("Controller:  {:04X}", value);
             }
 
             PPU_DMA_ADDR => *self.dma = Dma::Requested(value),

@@ -51,7 +51,7 @@ impl Console {
     }
 
     pub fn clock(&mut self) -> bool {
-        let frame_ready = self.ppu.clock(&mut self.nmi, &mut self.video);
+        let frame_ready = self.ppu.clock(&mut self.nmi, &self.cart, &mut self.video);
         if self.system_cycles % 3 == 0 {
             if let Dma::Off = self.dma {
                 let mut bus = Bus::new(

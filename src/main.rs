@@ -38,16 +38,16 @@ fn main() -> Result<(), String> {
 
     canvas.present();
 
-    //let cart = Cartridge::new("nestest.nes").unwrap();
-    //let cart = Cartridge::new("smb.nes").unwrap();
-    let cartridge = Cartridge::new("nestest.nes").unwrap();
+    //let cartridge = Cartridge::new("nestest.nes").unwrap();
+    //let cartridge = Cartridge::new("smb.nes").unwrap();
+   let cartridge = Cartridge::new("nestest.nes").unwrap();
 
     let mut console = Console::new(cartridge);
     //console.reset(Some(0xc000));
     console.reset(None);
 
     let mut event_pump = sdl_context.event_pump()?;
-    let mut i = 0;
+
     'running: loop {
         for event in event_pump.poll_iter() {
             match event {
@@ -73,15 +73,13 @@ fn main() -> Result<(), String> {
                 .copy(
                     &texture,
                     Rect::new(0, 0, 256, 240),
-                    Rect::new(10, 10, 10 + 256, 10 + 240),
+                    Rect::new(10, 10, 10 + 2 * 256, 10 + 2 * 240),
                 )
                 .unwrap();
 
             canvas.present();
         }
 
-        // Time management!
-        // ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
     }
 
     Ok(())
