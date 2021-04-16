@@ -1,3 +1,4 @@
+use crate::nes::cartridge::Mirroring;
 use crate::nes::ppuregisters::*;
 use crate::nes::Cartridge;
 
@@ -43,6 +44,17 @@ impl Ppu {
     pub fn reset(&mut self) {
         self.scanline = -1;
         self.cycles = 0;
+
+        self.buffer = 0;
+
+        self.control.register = 0;
+        self.mask.register = 0;
+        self.status.register = 0;
+
+        self.write_toggle = false;
+        self.loopy_reg_video_ram.set_register(0);
+        self.loopy_reg_temp_ram.set_register(0);
+        self.fine_x = 0;
     }
 
     pub fn clock(&mut self, nmi: &mut bool) {}
@@ -124,7 +136,52 @@ impl Ppu {
     }
 
     fn write(&mut self, cart: &mut Cartridge, addr: u16, value: u8) {
-        todo!();
+        if let Some(v) = cart.write_ppu(addr, value) {
+            v
+        } else {
+            match addr {
+                0x2000..=0x3EFF => {
+                    let masked = addr & 0x0FFF;
+
+                    if cart.mirroring == Mirroring::Vertical {
+                        match masked {
+                            0x0000..=0x07FF => self.vram[masked as usize] = value,
+                            0x0800..=0x0FFF => self.vram[masked as usize & 0x07FF] = value,
+                            _ => panic!("Oh, no!"),
+                        }
+                    } else if cart.mirroring == Mirroring::Horizontal {
+                        match masked {
+                            0x0000..=0x03FF => self.vram[masked as usize] = value,
+                            0x0400..=0x07FF => self.vram[masked as usize & 0x03FF] = value,
+                            0x0800..=0x0BFF => self.vram[masked as usize & 0x03FF | 0x0400] = value,
+                            0x0C00..=0x0FFF => self.vram[masked as usize & 0x03FF | 0x0400] = value,
+                            _ => panic!("Oh, no!"),
+                        }
+                    }
+
+                    panic!("Oh, no!");
+                }
+                0x3F00..=0x3FFF => {
+                    let mut masked = addr & 0x1F;
+
+                    if masked == 0x0010 {
+                        masked = 0x0000;
+                    }
+                    if masked == 0x0014 {
+                        masked = 0x0004;
+                    }
+                    if masked == 0x0018 {
+                        masked = 0x0008;
+                    }
+                    if masked == 0x001C {
+                        masked = 0x000C;
+                    }
+
+                    self.palette[masked as usize] = value;
+                }
+                _ => { /* no op */ }
+            }
+        }
     }
 
     fn read(&self, cart: &Cartridge, addr: u16) -> u8 {
@@ -137,15 +194,30 @@ impl Ppu {
         $3F00-$3F1F	$0020	Palette RAM indexes
         $3F20-$3FFF	$00E0	Mirrors of $3F00-$3F1F
         */
-        if let Some(v) = cart.read_ppu(self.loopy_reg_video_ram.register()) {
+        if let Some(v) = cart.read_ppu(addr) {
             v
         } else {
             match addr {
                 0x2000..=0x3EFF => {
                     let masked = addr & 0x0FFF;
 
-                    //if cart.mirroring == Mirroring::Vertical;
-                    0
+                    if cart.mirroring == Mirroring::Vertical {
+                        match masked {
+                            0x0000..=0x07FF => self.vram[masked as usize],
+                            0x0800..=0x0FFF => self.vram[masked as usize & 0x07FF],
+                            _ => panic!("Oh, no!"),
+                        }
+                    } else if cart.mirroring == Mirroring::Horizontal {
+                        match masked {
+                            0x0000..=0x03FF => self.vram[masked as usize],
+                            0x0400..=0x07FF => self.vram[masked as usize & 0x03FF],
+                            0x0800..=0x0BFF => self.vram[masked as usize & 0x03FF | 0x0400],
+                            0x0C00..=0x0FFF => self.vram[masked as usize & 0x03FF | 0x0400],
+                            _ => panic!("Oh, no!"),
+                        }
+                    } else {
+                        panic!("Oh, no!")
+                    }
                 }
                 0x3F00..=0x3FFF => {
                     let mut masked = addr & 0x1F;
@@ -166,7 +238,7 @@ impl Ppu {
                     self.palette[masked as usize]
                         & (if self.mask.gray_scale() { 0x30 } else { 0x3F })
                 }
-                _ => 0,
+                _ => 0u8,
             }
         }
     }

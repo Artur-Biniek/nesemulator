@@ -26,11 +26,19 @@ impl Mapper for MapperZero {
         }
     }
 
+    fn write_cpu(&self, addr: u16, value: u8) -> Option<()> {
+        None
+    }
+
     fn read_ppu(&self, addr: u16) -> Option<u8> {
         if addr < 0x2000 {
             Some(self.chr[addr as usize])
         } else {
             None
         }
+    }
+
+    fn write_ppu(&self, addr: u16, value: u8) -> Option<()> {
+        None
     }
 }

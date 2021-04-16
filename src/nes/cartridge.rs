@@ -72,7 +72,15 @@ impl Cartridge {
         self.mapper.read_cpu(addr)
     }
 
+    pub fn write_cpu(&self, addr: u16, value: u8) -> Option<()> {
+        self.mapper.write_cpu(addr, value)
+    }
+
     pub fn read_ppu(&self, addr: u16) -> Option<u8> {
         self.mapper.read_ppu(addr)
+    }
+
+    pub fn write_ppu(&self, addr: u16, value: u8) -> Option<()> {
+        self.mapper.write_ppu(addr, value)
     }
 }
